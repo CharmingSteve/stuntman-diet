@@ -30,7 +30,7 @@ export async function chat(store: Store, user: string, key: string, body: unknow
       .filter((e) => e.status === "active" && Date.parse(e.occurred_at) <= time.instant.valueOf() && (!/same as yesterday/i.test(input.text) || e.day_key === yesterday))
       .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))[0];
     const resolved = resolveCatalog(foods, parsed, latest?.food_id ? { foodId: latest.food_id, name: latest.display_name, calories: latest.calories, quantity: latest.quantity ?? 1, unit: latest.unit } : null);
-    const needs = [...parsed.needs_clarification, ...resolved.filter((r) => r.matchStage === "unresolved").map((r) => `Please clarify ${r.name}.`)];
+    const needs = [...parsed.needs_clarification, ...resolved.filter((r) => r.matchStage === "unresolved").map((r) => `Could not work out calories for "${r.name}". Send it again with an amount in grams or ml (for example "30g pure peanut butter") or with your own calorie number.`)];
     const writes = [], entries = active.map((e) => e.entry);
     const recordable = resolved.filter((r) => r.matchStage !== "unresolved");
     if ((recordable.length || parsed.burn || parsed.correction) && state.data.eligibility !== "tracked")
