@@ -25,34 +25,6 @@
         <button id="login" type="button">Continue with Cognito</button>
       </section>
       <div id="app-panel" class="hidden">
-        <section class="panel" aria-labelledby="settings-title">
-          <h2 id="settings-title">Tracking settings</h2>
-          <p>Friday and Saturday are non-tracking days by default. Choose your own observed holidays; no religious or civil calendar is assumed. Settings and timezone changes do not rewrite past days.</p>
-          <form id="profile-form">
-            <label for="timezone">Timezone (IANA name)</label>
-            <input id="timezone" type="text" maxlength="100" placeholder="Asia/Jerusalem" autocomplete="off" required>
-            <fieldset id="weekdays">
-              <legend>Non-tracking weekdays</legend>
-              <label><input type="checkbox" name="weekday" value="0"> Sunday</label>
-              <label><input type="checkbox" name="weekday" value="1"> Monday</label>
-              <label><input type="checkbox" name="weekday" value="2"> Tuesday</label>
-              <label><input type="checkbox" name="weekday" value="3"> Wednesday</label>
-              <label><input type="checkbox" name="weekday" value="4"> Thursday</label>
-              <label><input type="checkbox" name="weekday" value="5" checked> Friday</label>
-              <label><input type="checkbox" name="weekday" value="6" checked> Saturday</label>
-            </fieldset>
-            <label for="holidays">Observed holiday dates</label>
-            <textarea id="holidays" rows="3" placeholder="2026-10-24, 2026-10-25" aria-describedby="holiday-help"></textarea>
-            <p id="holiday-help" class="hint">Use YYYY-MM-DD dates, separated by commas or new lines. Add a date range below to expand it into individual observed dates.</p>
-            <div class="form-row">
-              <label>Holiday range start<input id="holiday-from" type="date"></label>
-              <label>Holiday range end<input id="holiday-to" type="date"></label>
-              <button id="add-holidays" class="secondary" type="button">Add holiday range</button>
-            </div>
-            <button type="submit">Save tracking settings</button>
-          </form>
-          <p id="profile-status" class="status" role="status" aria-live="polite"></p>
-        </section>
         <section class="panel">
           <div class="section-heading">
             <div>
@@ -169,6 +141,34 @@
             <button type="submit">Confirm import</button>
           </form>
           <div id="import-report"></div>
+        </section>
+        <section class="panel" aria-labelledby="settings-title">
+          <h2 id="settings-title">Tracking settings</h2>
+          <p>Friday and Saturday are non-tracking days by default. Choose your own observed holidays; no religious or civil calendar is assumed. Settings and timezone changes do not rewrite past days.</p>
+          <form id="profile-form">
+            <label for="timezone">Timezone (IANA name)</label>
+            <input id="timezone" type="text" maxlength="100" placeholder="Asia/Jerusalem" autocomplete="off" required>
+            <fieldset id="weekdays">
+              <legend>Non-tracking weekdays</legend>
+              <label><input type="checkbox" name="weekday" value="0"> Sunday</label>
+              <label><input type="checkbox" name="weekday" value="1"> Monday</label>
+              <label><input type="checkbox" name="weekday" value="2"> Tuesday</label>
+              <label><input type="checkbox" name="weekday" value="3"> Wednesday</label>
+              <label><input type="checkbox" name="weekday" value="4"> Thursday</label>
+              <label><input type="checkbox" name="weekday" value="5" checked> Friday</label>
+              <label><input type="checkbox" name="weekday" value="6" checked> Saturday</label>
+            </fieldset>
+            <label for="holidays">Observed holiday dates</label>
+            <textarea id="holidays" rows="3" placeholder="2026-10-24, 2026-10-25" aria-describedby="holiday-help"></textarea>
+            <p id="holiday-help" class="hint">Use YYYY-MM-DD dates, separated by commas or new lines. Add a date range below to expand it into individual observed dates.</p>
+            <div class="form-row">
+              <label>Holiday range start<input id="holiday-from" type="date"></label>
+              <label>Holiday range end<input id="holiday-to" type="date"></label>
+              <button id="add-holidays" class="secondary" type="button">Add holiday range</button>
+            </div>
+            <button type="submit">Save tracking settings</button>
+          </form>
+          <p id="profile-status" class="status" role="status" aria-live="polite"></p>
         </section>
       </div>
     </main>
