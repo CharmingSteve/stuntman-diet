@@ -25,7 +25,7 @@ export function analyticsSQL(database: string, table: string, snapshot: string, 
       least(cast(${literal(range.to)} AS date),cast(at_timezone(from_iso8601_timestamp(${literal(snapshotAt)}),p.timezone) AS date)) finish
     FROM source CROSS JOIN policy p GROUP BY p.timezone
   ), calendar AS (
-    SELECT day FROM bounds CROSS JOIN UNNEST(
+    SELECT cast(day AS date) day FROM bounds CROSS JOIN UNNEST(
       IF(start<=finish,sequence(start,finish,INTERVAL '1' DAY),cast(ARRAY[] AS array(date)))
     ) AS t(day)
   ), meals AS (

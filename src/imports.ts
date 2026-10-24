@@ -340,13 +340,18 @@ export async function confirmImport(store: Store, user: string, id: string): Pro
       }
     }
   }
-  const remaining = (await allItems(store, pk, { prefix: `IMPORT#${id}#RECORD#` })).some((r) => r.data.status === "pending");
+  const finalRecords = await allItems(store, pk, { prefix: `IMPORT#${id}#RECORD#` });
+  const remaining = finalRecords.some((r) => r.data.status === "pending");
   if (!remaining) {
     const report = await importReport(store, user, id);
     const browserSummaries = new Set(records.filter((r) => recordSchema.parse(r.data).message.browser_table).map((r) => String(r.data.source_id)));
     const conflicts = z.array(z.object({ day: z.string(), source_id: z.string(), matches: z.boolean() })).parse(report.reconciliation).filter((r) => !r.matches && !browserSummaries.has(r.source_id));
-    for (const conflict of conflicts) {
-      const day = await store.get(pk, `DAY#${conflict.day}#META`);
+    const incompleteDays = new Set([
+      ...conflicts.map((r) => r.day),
+      ...finalRecords.filter((r) => r.data.status === "failed").map((r) => String(r.data.day))
+    ]);
+    for (const incompleteDay of incompleteDays) {
+      const day = await store.get(pk, `DAY#${incompleteDay}#META`);
       if (day && day.data.completeness === "complete") await store.transact([write(pk, day.SK, "day", { ...day.data, completeness: "partial" }, day)]);
     }
     const current = await store.get(pk, old.SK);

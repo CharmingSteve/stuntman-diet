@@ -142,6 +142,12 @@ Snapshot profile policy supplies calendar coverage for absent dates.
 
 Every partition must point **only** to the validated native export's `data/`
 directory, never to its ancestor containing manifests or to a puddle root.
+Glue requires a table-level storage location before it accepts partitions.
+The table's location is the intentionally empty private
+`s3://<puddle>/analytics-table-root/` prefix, never `exports/` or a parent
+containing actual exports. Nothing writes data to that inert prefix.
+Snapshot partitions alone point at actual validated export data directories;
+queries still constrain exactly one snapshot.
 The worker validates manifests before registering the partition and atomically
 publishing the `SYSTEM#EXPORT / LATEST` pointer. Every analytics query selects
 exactly one published snapshot; do not union snapshots or sum multiple exports.

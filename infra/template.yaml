@@ -147,6 +147,7 @@ Resources:
           - Name: snapshot
             Type: string
         StorageDescriptor:
+          Location: !Sub s3://${PuddleBucket}/analytics-table-root/
           Columns:
             - Name: item
               Type: "struct<pk:struct<s:string>,sk:struct<s:string>,entity:struct<s:string>,version:struct<n:string>,data:struct<m:struct<user_id:struct<s:string>,day:struct<s:string>,day_key:struct<s:string>,calories:struct<n:string>,status:struct<s:string>,display_name:struct<s:string>,burn_total:struct<n:string>,burn_source:struct<s:string>,completeness:struct<s:string>,eligibility:struct<s:string>,metric:struct<s:string>,value:struct<n:string>,accept_default_burn:struct<bool:boolean>,holidays:struct<l:array<struct<s:string>>>,non_tracking_weekdays:struct<l:array<struct<n:string>>>,timezone:struct<s:string>>>>"
