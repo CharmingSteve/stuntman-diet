@@ -47,6 +47,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.
   const path = process.env.FOODS_PATH ?? "./seeds/foods.json";
   const parsed = JSON.parse(readFileSync(path, "utf8")) as SeedFile;
   const db = createDatabase();
-  seedFoods(db, parsed.foods);
-  db.close();
+  try {
+    seedFoods(db, parsed.foods);
+    const { seedCatalog } = await import("./catalog.js");
+    const { SQLiteStore } = await import("./store-sqlite.js");
+    await seedCatalog(new SQLiteStore(db), parsed.foods);
+  } finally { db.close(); }
 }

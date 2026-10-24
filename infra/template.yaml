@@ -5,6 +5,10 @@ Parameters:
     Type: String
   CodeKey:
     Type: String
+  SystemPromptKey:
+    Type: String
+    AllowedPattern: ^releases/[a-f0-9]{40}/system-prompt\.md$
+    Description: Immutable system prompt for this approved source revision.
   AccessLogsBucket:
     Type: String
   CognitoUserPool:
@@ -219,7 +223,7 @@ Resources:
                 Action: s3:GetObject
                 Resource:
                   - !Sub ${PuddleBucket.Arn}/exports/*
-                  - !Sub arn:${AWS::Partition}:s3:::${CodeBucket}/prompts/stuntman-diet-system-prompt.md
+                  - !Sub arn:${AWS::Partition}:s3:::${CodeBucket}/${SystemPromptKey}
               - Effect: Allow
                 Action: [s3:GetBucketLocation, s3:ListBucket]
                 Resource: !GetAtt PuddleBucket.Arn
@@ -398,7 +402,7 @@ Resources:
           COGNITO_CLIENT_ID: !Ref CognitoClientId
           SMOKE_CLIENT_ID: !Ref SmokeClientId
           BEDROCK_MODEL: !Ref BedrockModel
-          SYSTEM_PROMPT_PATH: !Sub s3://${CodeBucket}/prompts/stuntman-diet-system-prompt.md
+          SYSTEM_PROMPT_PATH: !Sub s3://${CodeBucket}/${SystemPromptKey}
           FOODS_PATH: seeds/foods.json
       BuildConfig:
         RuntimeConfig:

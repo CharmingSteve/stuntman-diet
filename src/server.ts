@@ -13,8 +13,9 @@ import { createDatabase } from "./db.js";
 import { SQLiteStore } from "./store-sqlite.js";
 import { DynamoStore } from "./store-dynamo.js";
 import { allItems, StoreConflict, type Store } from "./store.js";
-import { seedFoods, normalizeFoodText } from "./seed.js";
-import { profile, profileSchema, dateSchema, dayState, daySchema, userPK, write, history, mutate, metricSchema, digest, InputError } from "./ledger.js";
+import { seedFoods } from "./seed.js";
+import { seedCatalog } from "./catalog.js";
+import { profile, profileSchema, profileUpdateSchema, dateSchema, dayState, dayUpdateSchema, userPK, write, history, mutate, metricSchema, digest, InputError } from "./ledger.js";
 import { resolveRequestTime, TimeInputError } from "./time.js";
 import { chat } from "./chat.js";
 import { startTrends, queryResult, refresh, exportResult } from "./analytics.js";
@@ -31,17 +32,6 @@ const foodSchema = z.object({
 function idempotency(key: string | undefined): string {
   if (!key || !/^[A-Za-z0-9:_-]{8,120}$/.test(key)) throw new InputError("Provide an Idempotency-Key (8-120 letters, numbers, colon, underscore or hyphen)");
   return key;
-}
-async function initialize(store: Store, foods: FoodRecord[]): Promise<void> {
-  for (const food of foods) {
-    if (await store.get("CATALOG", `FOOD#${food.id}`)) continue;
-    const aliases = [...new Map(food.aliases.map((alias) => [normalizeFoodText(alias), alias])).entries()];
-    try { await store.transact([
-      write("CATALOG", `FOOD#${food.id}`, "food", food),
-      ...aliases.map(([normalized, alias]) => write(`ALIAS#${normalized}`, `FOOD#${food.id}`, "alias", { food_id: food.id, alias, normalized_alias: normalized }))
-    ]); }
-    catch (error) { if (!(error instanceof StoreConflict)) throw error; }
-  }
 }
 export function createApp(
   input?: Store | Database.Database,
@@ -96,13 +86,13 @@ export function createApp(
   app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
   app.use("/api/*", authenticate);
   app.use("/api/*", async (_c, next) => {
-    ready ??= initialize(store, catalog.foods).catch((error: unknown) => { ready = undefined; throw error; });
+    ready ??= seedCatalog(store, catalog.foods).catch((error: unknown) => { ready = undefined; throw error; });
     await ready;
     await next();
   });
   app.get("/api/profile", async (c) => c.json(await profile(store, c.get("userId"))));
   app.put("/api/profile", async (c) => {
-    const data = profileSchema.partial().strict().parse(await c.req.json()), user = c.get("userId");
+    const data = profileUpdateSchema.parse(await c.req.json()), user = c.get("userId");
     const key = idempotency(c.req.header("Idempotency-Key"));
     return c.json(await mutate(store, user, key, { route: c.req.path, data }, async () => {
       const old = await store.get(userPK(user), "PROFILE");
@@ -126,7 +116,7 @@ export function createApp(
   });
   app.put("/api/days/:day", async (c) => {
     const user = c.get("userId"), day = dateSchema.parse(c.req.param("day"));
-    const data = daySchema.pick({ eligibility: true, completeness: true, accept_default_burn: true }).partial().strict().parse(await c.req.json());
+    const data = dayUpdateSchema.parse(await c.req.json());
     const key = idempotency(c.req.header("Idempotency-Key"));
     return c.json(await mutate(store, user, key, { route: c.req.path, data }, async () => {
       const p = await profile(store, user), state = await dayState(store, user, day, p);
@@ -151,7 +141,7 @@ export function createApp(
         else if (upload.type === "image/webp" && Buffer.from(bytes.subarray(0, 4)).toString() === "RIFF" && Buffer.from(bytes.subarray(8, 12)).toString() === "WEBP") mediaType = "webp";
         else return c.json({ error: "Only valid JPEG, PNG, and WebP images are supported" }, 415);
         image = { mediaType, bytes }; imageHash = digest(Buffer.from(bytes).toString("base64"));
-        const bucket = process.env.IMAGE_BUCKET ?? process.env.S3_BACKUP_BUCKET;
+        const bucket = process.env.IMAGE_BUCKET || process.env.PUDDLE_BUCKET || process.env.S3_BACKUP_BUCKET;
         if (!bucket) return c.json({ error: "Image storage is not configured" }, 503);
         imageKey = `images/${digest(user)}/${digest([key, imageHash])}.${mediaType}`;
         await s3.send(new PutObjectCommand({ Bucket: bucket, Key: imageKey, Body: bytes, ContentType: upload.type, ServerSideEncryption: "AES256" }));

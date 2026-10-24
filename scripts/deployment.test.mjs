@@ -153,3 +153,15 @@ test("DynamoDB readiness only permits loopback endpoints", () => fixture(execute
     assert.notEqual(execute("wait-dynamo.mjs", [], { DYNAMODB_ENDPOINT: endpoint }).status, 0);
   }
 }));
+test("production gate can read environment protection and prompt objects are revision-scoped", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+  const production = workflow.split("  deploy-production:")[1];
+  assert.match(production, /permissions:\s+contents: read\s+actions: read/);
+  const deploy = readFileSync(join(root, "scripts/deploy.mjs"), "utf8");
+  assert.ok(deploy.includes("`releases/${process.env.BUILD_REVISION}/system-prompt.md`"));
+  assert.ok(deploy.includes("`SystemPromptKey=${promptKey}`"));
+  const template = readFileSync(join(root, "infra/template.yaml"), "utf8");
+  assert.ok(template.includes("SYSTEM_PROMPT_PATH: !Sub s3://${CodeBucket}/${SystemPromptKey}"));
+  assert.ok(template.includes("arn:${AWS::Partition}:s3:::${CodeBucket}/${SystemPromptKey}"));
+  assert.ok(!deploy.includes("/prompts/stuntman-diet-system-prompt.md"));
+});

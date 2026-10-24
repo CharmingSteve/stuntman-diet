@@ -92,11 +92,13 @@ Other kinds: `summary`/`burn` use `total`; `metric` uses `metric`, `value`, and
 stable across exports; repeated text alone is not a duplicate identity.
 
 Preview and resolve or skip uncertain records before confirmation. Import
-checkpoints commit 20 source groups per request and resume without reinserting
+checkpoints commit up to 20 source groups per request and resume without reinserting
 completed records. Source-identity conflicts fail explicitly; changed data must
 be represented as a correction, not silently overwrite an imported source.
 Repeated summary tables are never added as additional food intake. Reconciliation
 disagreements keep the day partial, even if it was initially marked complete.
+One original message/table commits atomically (at most 30 structured records);
+larger groups fail explicitly and must be split into reviewed source chunks.
 The regression suite covers more than 18 months of imported history.
 
 Raw browser HTML/transcripts are processed in memory and are not saved or sent

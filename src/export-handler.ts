@@ -83,9 +83,17 @@ export async function processExports(store: Store): Promise<void> {
     try {
       if (job.status === "pending") {
         const tableArn = config("TABLE_ARN");
-        const status = await dynamo.send(new DescribeContinuousBackupsCommand({ TableName: config("TABLE_NAME") }));
-        const time = status.ContinuousBackupsDescription?.PointInTimeRecoveryDescription?.LatestRestorableDateTime;
-        if (!time) throw new Error("PITR has no available snapshot time");
+        if (!job.snapshot_at) {
+          const status = await dynamo.send(new DescribeContinuousBackupsCommand({ TableName: config("TABLE_NAME") }));
+          const time = status.ContinuousBackupsDescription?.PointInTimeRecoveryDescription?.LatestRestorableDateTime;
+          if (!time) throw new Error("PITR has no available snapshot time");
+          // Persist all variable request parameters before the external side effect.
+          await store.transact([write(exportPK, row.SK, "export_job", {
+            ...job, snapshot_at: time.toISOString(), snapshot_id: job.job_id
+          }, row)]);
+          continue;
+        }
+        const time = new Date(job.snapshot_at);
         const response = await dynamo.send(new ExportTableToPointInTimeCommand({
           TableArn: tableArn, S3Bucket: config("PUDDLE_BUCKET"),
           S3Prefix: `exports/${job.job_id}`, ExportFormat: "DYNAMODB_JSON",
@@ -126,7 +134,8 @@ export async function processExports(store: Store): Promise<void> {
       if (error instanceof StoreConflict) continue;
       console.error("Export job failed", { job_id: job.job_id, error: error instanceof Error ? error.message : String(error) });
       const current = await store.get(exportPK, row.SK);
-      if (current && current.data.status !== "complete") {
+      const retryable = error instanceof Error && ["TimeoutError", "ThrottlingException", "InternalServerError", "ServiceUnavailable", "NetworkingError"].includes(error.name);
+      if (current && current.data.status !== "complete" && !retryable) {
         await store.transact([write(exportPK, row.SK, "export_job", { ...current.data, status: "failed", error: error instanceof Error ? error.message : "Export failed" }, current)]);
       }
     }

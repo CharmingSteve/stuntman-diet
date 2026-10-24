@@ -62,14 +62,14 @@ function selectedCalories(row: FoodRow, quantity: number, unit: string): number 
   if (typeof per100 === "number") {
     if (normalizedUnit === "g") return Math.round(per100 * quantity / 100);
     if (normalizedUnit === "portion" && portion && typeof portion.grams === "number" &&
-        typeof portion.calories === "number") return Math.round(portion.calories * quantity);
+        typeof portion.calories === "number") return Math.round(per100 * portion.grams * quantity / 100);
     return null;
   }
   const per100ml = preferred.calories_per_100ml ?? basis.calories_per_100ml;
   if (typeof per100ml === "number") {
     if (normalizedUnit === "ml") return Math.round(per100ml * quantity / 100);
     if (normalizedUnit === "portion" && portion && typeof portion.ml === "number" &&
-        typeof portion.calories === "number") return Math.round(portion.calories * quantity);
+        typeof portion.calories === "number") return Math.round(per100ml * portion.ml * quantity / 100);
     return null;
   }
   const perGram = preferred.calories_per_gram ?? basis.calories_per_gram;

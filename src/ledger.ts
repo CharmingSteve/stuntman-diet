@@ -15,6 +15,11 @@ export const profileSchema = z.object({
   holidays: z.array(dateSchema).max(1000).default([]),
   non_tracking_weekdays: z.array(z.number().int().min(0).max(6)).max(7).default([5, 6])
 });
+export const profileUpdateSchema = z.object({
+  timezone: profileSchema.shape.timezone.removeDefault().optional(),
+  holidays: profileSchema.shape.holidays.removeDefault().optional(),
+  non_tracking_weekdays: profileSchema.shape.non_tracking_weekdays.removeDefault().optional()
+}).strict();
 export const daySchema = z.object({
   day_key: dateSchema, timezone: z.string(),
   eligibility: z.enum(["tracked", "untracked"]),
@@ -24,6 +29,11 @@ export const daySchema = z.object({
   accept_default_burn: z.boolean().default(false),
   burn_components: z.array(z.number()).default([])
 });
+export const dayUpdateSchema = z.object({
+  eligibility: daySchema.shape.eligibility.optional(),
+  completeness: daySchema.shape.completeness.optional(),
+  accept_default_burn: z.boolean().optional()
+}).strict();
 export const entrySchema = z.object({
   id: z.string(), day_key: dateSchema, occurred_at: z.string(), timezone: z.string(),
   food_id: z.string().nullable().default(null), raw_text: z.string().default(""),
@@ -92,7 +102,7 @@ export async function dayItems(store: Store, user: string, from: string, to: str
 export async function history(store: Store, user: string, from?: string, to?: string) {
   const p = await profile(store, user);
   const today = dayKeyFor(new Date(), p.timezone);
-  const end = to ?? today;
+  const end = dateSchema.parse(to ?? today);
   const start = from ?? new Date(new Date(`${end}T12:00:00Z`).valueOf() - 29 * 86400000).toISOString().slice(0, 10);
   dateRange(start, end);
   const count = Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1;

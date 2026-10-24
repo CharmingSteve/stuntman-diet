@@ -43,6 +43,10 @@ References:
 and an access-log bucket. The release read policy is constrained to native
 Web Function revisions in the staging and production stacks.
 `infra/auth.yaml` creates environment-isolated Cognito resources.
+The system prompt is uploaded under immutable
+`releases/<full-commit-SHA>/system-prompt.md`; each revision's environment
+and IAM object-read grant select that exact key. Staging cannot change a
+running production revision's prompt by overwriting a shared prompt path.
 `infra/template.yaml` creates:
 
 - An on-demand DynamoDB table (`PK`, `SK` string keys) with KMS customer-managed
@@ -235,6 +239,9 @@ with required PR/status checks. `scripts/verify-production-gate.mjs` fails
 closed if reviewer/main-only/branch-protection settings cannot be verified
 through the GitHub API. These repository settings cannot be provisioned by
 CloudFormation and must be configured before production promotion.
+The production job grants its GitHub token only `contents: read` and
+`actions: read`, including read access required for environment-protection
+verification; it cannot edit approval or branch-protection settings.
 
 Cloud smoke execution and full package verification require deployed
 resources/Linux respectively; passing read-only preflight or template lint

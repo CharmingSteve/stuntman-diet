@@ -30,10 +30,12 @@ const authentication = outputs(auth);
 const artifacts = outputs("stuntman-diet-artifacts");
 const key = `releases/${process.env.BUILD_REVISION}.zip`;
 aws("s3", "cp", "dist/stuntman-diet.zip", `s3://${artifacts.ArtifactBucketName}/${key}`, "--sse", "AES256", "--only-show-errors");
+const promptKey = `releases/${process.env.BUILD_REVISION}/system-prompt.md`;
 aws("s3", "cp", "docs/stuntman-diet-system-prompt.md",
-  `s3://${artifacts.ArtifactBucketName}/prompts/stuntman-diet-system-prompt.md`, "--sse", "AES256", "--only-show-errors");
+  `s3://${artifacts.ArtifactBucketName}/${promptKey}`, "--sse", "AES256", "--only-show-errors");
 deploy("infra/template.yaml", stack, [
   `CodeBucket=${artifacts.ArtifactBucketName}`, `CodeKey=${key}`,
+  `SystemPromptKey=${promptKey}`,
   `AccessLogsBucket=${artifacts.AccessLogsBucketName}`, `Environment=${environment}`,
   ...["CognitoUserPool", "CognitoDomain", "CognitoClientId", "SmokeClientId"].map(k => `${k}=${authentication[k]}`)
 ], true);

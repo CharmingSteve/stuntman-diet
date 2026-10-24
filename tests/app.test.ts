@@ -241,9 +241,14 @@ describe("HTTP app", () => {
     await request(protectedServer).get("/api/profile").expect(200).expect({ timezone: "Asia/Jerusalem", holidays: [], non_tracking_weekdays: [5, 6] });
     await request(protectedServer).put("/api/profile").send({ timezone: "Invalid/Place" }).expect(400);
     await request(protectedServer).put("/api/profile").set("Idempotency-Key", "profile-update-1").send({ timezone: "America/Los_Angeles" }).expect(200);
+    await request(protectedServer).put("/api/profile").set("Idempotency-Key", "profile-update-policy").send({ holidays: ["2025-01-05"], non_tracking_weekdays: [6] }).expect(200)
+      .expect((response) => expect(response.body.timezone).toBe("America/Los_Angeles"));
+    await request(protectedServer).put("/api/profile").set("Idempotency-Key", "profile-update-zone").send({ timezone: "Asia/Jerusalem" }).expect(200)
+      .expect((response) => expect(response.body).toMatchObject({ holidays: ["2025-01-05"], non_tracking_weekdays: [6] }));
   });
 
   it("serves history and trends and validates health metric input", async () => {
+    await request(protectedServer).get("/api/history?to=invalid").expect(400);
     await request(protectedServer).get("/api/history").expect(200)
       .expect((response) => expect(response.body.days).toHaveLength(30));
     await request(protectedServer).get("/api/trends").expect(200)
@@ -254,5 +259,10 @@ describe("HTTP app", () => {
     await request(protectedServer).post("/api/health-metrics").set("Idempotency-Key", "health-metric-invalid").send({
       metric: "glucose", value: -1, unit: "mg/dL", client_time: "2026-10-24T10:00:00Z"
     }).expect(400);
+  });
+  it("preserves accepted default burn during a completeness-only update", async () => {
+    await request(protectedServer).put("/api/days/2025-01-06").set("Idempotency-Key", "day-accept-default").send({ accept_default_burn: true }).expect(200);
+    await request(protectedServer).put("/api/days/2025-01-06").set("Idempotency-Key", "day-complete-only").send({ completeness: "complete" }).expect(200)
+      .expect((response) => expect(response.body).toMatchObject({ accept_default_burn: true, completeness: "complete" }));
   });
 });

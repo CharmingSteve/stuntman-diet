@@ -104,6 +104,9 @@ jobs:
 
   deploy-production:
     name: Promote approved release to production
+    permissions:
+      contents: read
+      actions: read # Verify required reviewers and main-only deployment policy through the environments API.
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.production))
     needs: deploy-staging-and-smoke-test
     runs-on: ubuntu-latest

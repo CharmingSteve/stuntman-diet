@@ -47,9 +47,26 @@ describe("native snapshot publication", () => {
       throw new Error("Unexpected command");
     });
     await processExports(store);
+    expect((await store.get(exportPK, `JOB#${id}`))?.data.snapshot_at).toBe("2025-01-01T00:00:00.000Z");
+    expect(aws.dynamo.mock.calls.filter(([c]) => c.constructor.name === "ExportTableToPointInTimeCommand")).toHaveLength(0);
+    await processExports(store);
     expect((await store.get(exportPK, `JOB#${id}`))?.data.status).toBe("running");
     expect(await store.get(exportPK, "LATEST")).toBeUndefined();
     expect(aws.dynamo.mock.calls.every(([c]) => c.constructor.name !== "ScanCommand")).toBe(true);
+  });
+  it("resumes submission after a timeout with exactly the persisted snapshot time", async () => {
+    await store.transact([write(exportPK, "JOB#retry", "export_job", {
+      job_id: "retry", status: "pending", requested_at: "2025-01-01T01:00:00Z", snapshot_at: "2025-01-01T00:00:00Z", snapshot_id: "retry"
+    })]);
+    aws.dynamo.mockRejectedValueOnce(Object.assign(new Error("connection lost"), { name: "TimeoutError" }))
+      .mockResolvedValueOnce({ ExportDescription: { ExportArn: "arn:retry" } });
+    await processExports(store);
+    expect((await store.get(exportPK, "JOB#retry"))?.data.status).toBe("pending");
+    await processExports(store);
+    const inputs = aws.dynamo.mock.calls.map(([command]) => command.input);
+    expect(inputs[0]).toEqual(inputs[1]);
+    expect(inputs[0].ExportTime.toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    expect((await store.get(exportPK, "JOB#retry"))?.data.status).toBe("running");
   });
   it("validates native manifests/checksums including multipart ETags", async () => {
     const manifest = manifests();
