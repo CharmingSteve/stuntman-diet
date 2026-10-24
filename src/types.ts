@@ -12,8 +12,8 @@ export type FoodRecord = {
   aliases: string[];
   category: string;
   basis: Record<string, unknown>;
-  preferred_value?: Record<string, unknown>;
-  notes?: string;
+  preferred_value?: Record<string, unknown> | undefined;
+  notes?: string | undefined;
 };
 
 export type Dependencies = {

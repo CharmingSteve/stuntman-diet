@@ -1,13 +1,16 @@
-name: CI and staging deployment
+name: CI and CloudFormation deployment
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      production:
+        description: Promote this revision after staging passes (production environment approval required)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,6 +21,7 @@ concurrency:
 
 jobs:
   verify-and-package:
+    name: Verify tests and package Linux release
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -29,160 +33,108 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - name: Install dependencies
+      - name: Install, test, build, and package Linux native dependencies
         run: |
           set -euo pipefail
           npm ci
-      - name: Run unit and HTTP integration tests
-        run: |
-          set -euo pipefail
           npm test
-      - name: Build TypeScript
-        run: |
-          set -euo pipefail
           npm run build
-      - name: Build Web Function ZIP
-        run: |
-          set -euo pipefail
           npm run package
-      - name: Upload deployment ZIP
+      - name: Upload immutable deployment ZIP
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: stuntman-diet-web-function
           path: dist/stuntman-diet.zip
           if-no-files-found: error
+          retention-days: 7
 
   deploy-staging-and-smoke-test:
+    name: Deploy staging and validate cloud fixtures
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs:
-      - verify-and-package
+    needs: verify-and-package
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 90
+    environment: staging
     env:
       AWS_REGION: us-east-1
       AWS_PAGER: ""
+      BUILD_REVISION: ${{ github.sha }}
     steps:
       - name: Check out infrastructure
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
         with:
           persist-credentials: false
-      - name: Download deployment ZIP
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Download verified deployment ZIP
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: stuntman-diet-web-function
           path: dist
-      - name: Configure AWS credentials
+      - name: Configure account-restricted AWS credentials
         uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
           allowed-account-ids: "570989156105"
-      - name: Verify required storage and scaling capabilities before creating resources
+      - name: Preflight, deploy staging, and check durable resources
         run: |
           set -euo pipefail
-          node scripts/check-deployment.mjs
-      - name: Deploy standalone staging authentication with CloudFormation
-        run: |
-          set -euo pipefail
-          CALLBACK_URL="http://localhost:3000/"
-          STACKS="$(aws cloudformation list-stacks \
-            --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE \
-            --output json)"
-          if printf '%s' "$STACKS" | jq -e '.StackSummaries[] | select(.StackName == "stuntman-diet-staging")' >/dev/null; then
-            CALLBACK_URL="$(aws cloudformation describe-stacks --stack-name stuntman-diet-staging \
-              --output json | jq -er '.Stacks[0].Outputs[] | select(.OutputKey == "WebFunctionUrl") | .OutputValue')/"
-          fi
-          aws cloudformation deploy --template-file infra/auth.yaml \
-            --stack-name stuntman-diet-auth \
-            --parameter-overrides "CallbackUrl=${CALLBACK_URL}" \
-            --no-fail-on-empty-changeset
-          AUTH_OUTPUTS="$(aws cloudformation describe-stacks --stack-name stuntman-diet-auth --output json)"
-          for KEY in CognitoUserPool CognitoClientId CognitoDomain SmokeClientId; do
-            VALUE="$(printf '%s' "$AUTH_OUTPUTS" | jq -er --arg key "$KEY" '.Stacks[0].Outputs[] | select(.OutputKey == $key) | .OutputValue')"
-            printf '%s=%s\n' "$KEY" "$VALUE" >> "$GITHUB_ENV"
-          done
-      - name: Deploy artifact bucket with CloudFormation
-        run: |
-          set -euo pipefail
-          aws cloudformation deploy \
-            --template-file infra/artifacts.yaml \
-            --stack-name stuntman-diet-artifacts \
-            --no-fail-on-empty-changeset
-          CODE_BUCKET="$(aws cloudformation describe-stacks \
-            --stack-name stuntman-diet-artifacts \
-            --output json | jq -er '.Stacks[0].Outputs[] | select(.OutputKey == "ArtifactBucketName") | .OutputValue')"
-          printf 'CODE_BUCKET=%s\n' "$CODE_BUCKET" >> "$GITHUB_ENV"
-          ACCESS_LOGS_BUCKET="$(aws cloudformation describe-stacks \
-            --stack-name stuntman-diet-artifacts \
-            --output json | jq -er '.Stacks[0].Outputs[] | select(.OutputKey == "AccessLogsBucketName") | .OutputValue')"
-          printf 'ACCESS_LOGS_BUCKET=%s\n' "$ACCESS_LOGS_BUCKET" >> "$GITHUB_ENV"
-      - name: Upload package and deploy staging with CloudFormation
+          node scripts/deploy.mjs staging
+      - name: Three mandatory HTTP smokes and isolated export/Athena fixture
         env:
-          BUILD_REVISION: ${{ github.sha }}
-          BEDROCK_MODEL: amazon.nova-lite-v1:0
+          ANALYTICS_MODULE: .cloud-package/dist/analytics.js
         run: |
           set -euo pipefail
-          CODE_KEY="releases/${BUILD_REVISION}.zip"
-          aws s3 cp dist/stuntman-diet.zip "s3://${CODE_BUCKET}/${CODE_KEY}" --sse AES256
-          aws s3 cp docs/stuntman-diet-system-prompt.md \
-            "s3://${CODE_BUCKET}/prompts/stuntman-diet-system-prompt.md" --sse AES256
-          aws cloudformation deploy \
-            --template-file infra/template.yaml \
-            --stack-name stuntman-diet-staging \
-            --capabilities CAPABILITY_IAM \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "CodeBucket=${CODE_BUCKET}" \
-              "CodeKey=${CODE_KEY}" \
-              "AccessLogsBucket=${ACCESS_LOGS_BUCKET}" \
-              "CognitoUserPool=${CognitoUserPool}" \
-              "CognitoDomain=${CognitoDomain}" \
-              "CognitoClientId=${CognitoClientId}" \
-              "SmokeClientId=${SmokeClientId}" \
-              "BedrockModel=${BEDROCK_MODEL}"
-          ENDPOINT_URL="$(aws cloudformation describe-stacks \
-            --stack-name stuntman-diet-staging \
-            --output json | jq -er '.Stacks[0].Outputs[] | select(.OutputKey == "WebFunctionUrl") | .OutputValue')"
-          printf 'ENDPOINT_URL=%s\n' "$ENDPOINT_URL" >> "$GITHUB_ENV"
-          aws cloudformation deploy --template-file infra/auth.yaml \
-            --stack-name stuntman-diet-auth \
-            --parameter-overrides "CallbackUrl=${ENDPOINT_URL}/" \
-            --no-fail-on-empty-changeset
-      - name: Smoke test health endpoint
+          mkdir .cloud-package
+          unzip -q dist/stuntman-diet.zip -d .cloud-package
+          node scripts/cloud-smoke.mjs stuntman-diet-staging --fixture
+
+  deploy-production:
+    name: Promote approved release to production
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.production))
+    needs: deploy-staging-and-smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Configure required reviewers and main-only deployment branches in repository settings.
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_PAGER: ""
+      BUILD_REVISION: ${{ github.sha }}
+    steps:
+      - name: Check out approved revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+      - name: Download same staging-tested deployment ZIP
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: stuntman-diet-web-function
+          path: dist
+      - name: Fail closed unless production approval and branch protections are configured
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "${ENDPOINT_URL}/health")"
-          test "$STATUS" = "200"
-      - name: Smoke test protected route without token
+          node scripts/verify-production-gate.mjs
+      - name: Configure account-restricted AWS credentials
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          allowed-account-ids: "570989156105"
+      - name: Deploy production and run three HTTP smokes
         run: |
           set -euo pipefail
-          STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "${ENDPOINT_URL}/api/history")"
-          test "$STATUS" = "401"
-      - name: Smoke test Bedrock parse with Cognito test JWT
-        run: |
-          set -euo pipefail
-          CLIENT_SECRET="$(aws cognito-idp describe-user-pool-client \
-            --user-pool-id "$CognitoUserPool" --client-id "$SmokeClientId" \
-            --query 'UserPoolClient.ClientSecret' --output text)"
-          printf '::add-mask::%s\n' "$CLIENT_SECRET"
-          TOKEN="$(curl --fail-with-body --silent --show-error \
-            --user "${SmokeClientId}:${CLIENT_SECRET}" \
-            --data-urlencode 'grant_type=client_credentials' \
-            --data-urlencode 'scope=diet-smoke/parse' \
-            "${CognitoDomain}/oauth2/token" | jq -er '.access_token')"
-          printf '::add-mask::%s\n' "$TOKEN"
-          CLIENT_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          BODY="$(jq -cn --arg client_time "$CLIENT_TIME" \
-            '{text:"protein drink 200 calories",client_time:$client_time}')"
-          RESPONSE_FILE="$(mktemp)"
-          trap 'rm -f "$RESPONSE_FILE"' EXIT
-          STATUS="$(curl --silent --show-error --output "$RESPONSE_FILE" --write-out '%{http_code}' \
-            --request POST \
-            --header "Authorization: Bearer ${TOKEN}" \
-            --header 'Content-Type: application/json' \
-            --data "$BODY" \
-            "${ENDPOINT_URL}/api/chat")"
-          test "$STATUS" = "200"
-          jq -e '.intent == "food_log" and .summary != null and .items[0].calories == 200' "$RESPONSE_FILE" >/dev/null
+          node scripts/deploy.mjs production
+          node scripts/cloud-smoke.mjs stuntman-diet-production

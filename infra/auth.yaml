@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Standalone staging authentication and isolated machine-to-machine smoke client.
+Description: Environment-isolated authentication and machine-to-machine smoke client.
 Parameters:
   CallbackUrl:
     Type: String
@@ -29,7 +29,7 @@ Resources:
   Domain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
-      Domain: !Sub stuntman-diet-staging-${AWS::AccountId}
+      Domain: !Sub ${AWS::StackName}-${AWS::AccountId}
       UserPoolId: !Ref UserPool
   BrowserClient:
     Type: AWS::Cognito::UserPoolClient

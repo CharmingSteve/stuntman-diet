@@ -238,20 +238,20 @@ describe("HTTP app", () => {
   });
 
   it("serves the authorized profile and rejects invalid timezone updates", async () => {
-    await request(protectedServer).get("/api/profile").expect(200).expect({ timezone: "Asia/Jerusalem" });
+    await request(protectedServer).get("/api/profile").expect(200).expect({ timezone: "Asia/Jerusalem", holidays: [], non_tracking_weekdays: [5, 6] });
     await request(protectedServer).put("/api/profile").send({ timezone: "Invalid/Place" }).expect(400);
-    await request(protectedServer).put("/api/profile").send({ timezone: "America/Los_Angeles" }).expect(200);
+    await request(protectedServer).put("/api/profile").set("Idempotency-Key", "profile-update-1").send({ timezone: "America/Los_Angeles" }).expect(200);
   });
 
   it("serves history and trends and validates health metric input", async () => {
     await request(protectedServer).get("/api/history").expect(200)
-      .expect((response) => expect(response.body.days).toHaveLength(21));
+      .expect((response) => expect(response.body.days).toHaveLength(30));
     await request(protectedServer).get("/api/trends").expect(200)
-      .expect((response) => expect(response.body).toHaveProperty("monthlyDeficit"));
-    await request(protectedServer).post("/api/health-metrics").send({
+      .expect((response) => expect(response.body).toMatchObject({ status: "complete", rows: expect.any(Array) }));
+    await request(protectedServer).post("/api/health-metrics").set("Idempotency-Key", "health-metric-1").send({
       metric: "glucose", value: 118, unit: "mg/dL", client_time: "2026-10-24T10:00:00Z"
     }).expect(201);
-    await request(protectedServer).post("/api/health-metrics").send({
+    await request(protectedServer).post("/api/health-metrics").set("Idempotency-Key", "health-metric-invalid").send({
       metric: "glucose", value: -1, unit: "mg/dL", client_time: "2026-10-24T10:00:00Z"
     }).expect(400);
   });

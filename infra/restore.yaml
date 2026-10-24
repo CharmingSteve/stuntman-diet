@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Restore one verified native full-export data directory into a new retained DynamoDB table.
+Parameters:
+  TableName:
+    Type: String
+    AllowedPattern: ^[A-Za-z0-9_.-]{3,255}$
+    Description: New table name; must not be an existing live application table.
+  ExportBucket:
+    Type: String
+    AllowedPattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+  ExportDataPrefix:
+    Type: String
+    AllowedPattern: ^exports/[A-Za-z0-9_./-]+/AWSDynamoDB/[A-Za-z0-9_-]+/data/$
+    Description: Exact validated full-export data/ prefix, excluding bucket and all manifests.
+Resources:
+  RestoreKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Restored DynamoDB table encryption.
+      EnableKeyRotation: true
+  RestoredTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      ImportSourceSpecification:
+        InputFormat: DYNAMODB_JSON
+        InputCompressionType: GZIP
+        S3BucketSource:
+          S3Bucket: !Ref ExportBucket
+          S3KeyPrefix: !Ref ExportDataPrefix
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref RestoreKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
+Outputs:
+  RestoredTableName:
+    Value: !Ref RestoredTable
+  RestoredTableArn:
+    Value: !GetAtt RestoredTable.Arn

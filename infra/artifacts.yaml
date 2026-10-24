@@ -70,7 +70,9 @@ Resources:
             Resource: !Sub ${ArtifactBucket.Arn}/releases/*
             Condition:
               ArnLike:
-                aws:SourceArn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/stuntman-diet-staging/revision/*
+                aws:SourceArn:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/stuntman-diet-staging/revision/*
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:web-function/stuntman-diet-production/revision/*
 Outputs:
   ArtifactBucketName:
     Value: !Ref ArtifactBucket

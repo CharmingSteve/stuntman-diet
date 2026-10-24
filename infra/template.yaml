@@ -1,39 +1,86 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Deployment blocked pending EFS mounts and single-environment Web Function support. Not production-ready.
-Metadata:
-  DeploymentStatus: Blocked
-  DeploymentBlockers:
-    - Web Function revisions cannot mount EFS.
-    - Web Function endpoints require MaxEnvironments of at least 2; SQLite requires 1.
+Description: Native Web Function with durable DynamoDB and an asynchronous S3/Athena data puddle.
 Parameters:
   CodeBucket:
     Type: String
-    Description: Existing versioned bucket created by infra/artifacts.yaml.
   CodeKey:
     Type: String
-    Description: S3 object key for the versioned Web Function ZIP.
   AccessLogsBucket:
     Type: String
-    Description: Private access log destination created by infra/artifacts.yaml.
   CognitoUserPool:
     Type: String
-    Description: Cognito User Pool ID or issuer URL used by the Hono JWT middleware.
   CognitoDomain:
     Type: String
-    Description: Cognito hosted UI domain, without a trailing slash.
   CognitoClientId:
     Type: String
-    Description: Public Cognito app client ID used by the PWA.
   SmokeClientId:
     Type: String
-    Description: Isolated Cognito machine-to-machine client permitted to smoke test the parse route.
+  Environment:
+    Type: String
+    Default: staging
+    AllowedValues: [staging, production]
   BedrockModel:
     Type: String
     Default: amazon.nova-lite-v1:0
-    AllowedPattern: ^(amazon\.nova-lite-v1(:0)?|anthropic\.claude-haiku[^/]*)$
-    Description: Staging model, restricted to the model families granted below.
+    AllowedValues: [amazon.nova-lite-v1:0]
 Resources:
-  BackupBucket:
+  DataKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: DynamoDB and worker configuration encryption.
+      EnableKeyRotation: true
+  LogKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: CloudWatch application and worker logs.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          # A KMS key policy's "*" means this key only, never all account resources.
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: [kms:DescribeKey, kms:GetKeyPolicy, kms:PutKeyPolicy, kms:EnableKeyRotation, kms:GetKeyRotationStatus, kms:ScheduleKeyDeletion, kms:CancelKeyDeletion, kms:TagResource, kms:UntagResource, kms:ListResourceTags, kms:UpdateKeyDescription]
+            Resource: "*"
+          - Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncryptFrom, kms:ReEncryptTo, kms:GenerateDataKey, kms:GenerateDataKeyWithoutPlaintext, kms:DescribeKey]
+            Resource: "*"
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-exports
+  DietTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref DataKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      DeletionProtectionEnabled: true
+  PuddleBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
@@ -51,7 +98,85 @@ Resources:
         Status: Enabled
       LoggingConfiguration:
         DestinationBucketName: !Ref AccessLogsBucket
-        LogFilePrefix: access/backups/
+        LogFilePrefix: !Sub access/${AWS::StackName}/
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExportRetention
+            Prefix: exports/
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: QueryResultRetention
+            Prefix: results/
+            Status: Enabled
+            ExpirationInDays: 7
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+          - Id: ImageHistoryRetention
+            Prefix: images/
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Sub diet_${Environment}_${AWS::AccountId}
+        Description: Native DynamoDB JSON snapshots; only data directories are partition locations.
+  GlueTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: diet_items
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          EXTERNAL: "TRUE"
+        PartitionKeys:
+          - Name: snapshot
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: item
+              Type: "struct<pk:struct<s:string>,sk:struct<s:string>,entity:struct<s:string>,version:struct<n:string>,data:struct<m:struct<user_id:struct<s:string>,day:struct<s:string>,day_key:struct<s:string>,calories:struct<n:string>,status:struct<s:string>,display_name:struct<s:string>,burn_total:struct<n:string>,burn_source:struct<s:string>,completeness:struct<s:string>,eligibility:struct<s:string>,metric:struct<s:string>,value:struct<n:string>,accept_default_burn:struct<bool:boolean>,holidays:struct<l:array<struct<s:string>>>,non_tracking_weekdays:struct<l:array<struct<n:string>>>,timezone:struct<s:string>>>>"
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Compressed: true
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              case.insensitive: "true"
+  AthenaWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-trends
+      RecursiveDeleteOption: false
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        BytesScannedCutoffPerQuery: 104857600
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${PuddleBucket}/results/
+          EncryptionConfiguration:
+            EncryptionOption: SSE_S3
+  WebLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/web/${AWS::StackName}
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt LogKey.Arn
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-exports
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt LogKey.Arn
   WebFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -63,34 +188,167 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: StagingWebFunctionPermissions
+        - PolicyName: Application
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}:*
-                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}.local:*
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt WebLogGroup.Arn
               - Effect: Allow
-                Action:
-                  - bedrock:InvokeModel
-                Resource:
-                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:BatchGetItem, dynamodb:ConditionCheckItem]
+                Resource: !GetAtt DietTable.Arn
               - Effect: Allow
-                Action:
-                  - s3:PutObject
-                Resource:
-                  - !Sub ${BackupBucket.Arn}/images/*
-                  - !Sub ${BackupBucket.Arn}/backups/*
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0
               - Effect: Allow
-                Action:
-                  - s3:GetObject
+                Action: [s3:PutObject, s3:GetObject]
                 Resource:
+                  - !Sub ${PuddleBucket.Arn}/images/*
+                  - !Sub ${PuddleBucket.Arn}/results/*
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub ${PuddleBucket.Arn}/exports/*
                   - !Sub arn:${AWS::Partition}:s3:::${CodeBucket}/prompts/stuntman-diet-system-prompt.md
+              - Effect: Allow
+                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Resource: !GetAtt PuddleBucket.Arn
+              - Effect: Allow
+                Action: [athena:StartQueryExecution, athena:GetQueryExecution, athena:GetQueryResults, athena:StopQueryExecution]
+                Resource: !Sub arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkgroup}
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                Resource: !GetAtt DataKey.Arn
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
+              - Effect: Allow
+                Action: [glue:GetDatabase, glue:GetTable, glue:GetPartitions, glue:GetPartition]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/diet_items
+  ExportWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ExportWorker
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt WorkerLogGroup.Arn
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:ConditionCheckItem, dynamodb:DescribeContinuousBackups, dynamodb:ExportTableToPointInTime]
+                Resource: !GetAtt DietTable.Arn
+              - Effect: Allow
+                Action: dynamodb:DescribeExport
+                Resource: !Sub ${DietTable.Arn}/export/*
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
+                Resource: !GetAtt DataKey.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt WorkerDeadLetters.Arn
+              - Effect: Allow
+                Action: [s3:PutObject, s3:AbortMultipartUpload, s3:PutObjectAcl, s3:GetObject]
+                Resource: !Sub ${PuddleBucket.Arn}/exports/*
+              - Effect: Allow
+                Action: [glue:GetTable, glue:GetPartition, glue:CreatePartition]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${GlueDatabase}
+                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${GlueDatabase}/diet_items
+  ExportWorker:
+    Type: AWS::Lambda::Function
+    # checkov:skip=CKV_AWS_117:Worker uses only regional AWS APIs, no private network resources. No inbound function URL exists; a VPC would require unnecessary NAT or endpoints.
+    DependsOn: WorkerLogGroup
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-exports
+      Runtime: nodejs24.x
+      Handler: dist/export-handler.handler
+      Role: !GetAtt ExportWorkerRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      ReservedConcurrentExecutions: 1
+      KmsKeyArn: !GetAtt DataKey.Arn
+      DeadLetterConfig:
+        TargetArn: !GetAtt WorkerDeadLetters.Arn
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Environment:
+        Variables:
+          STORE: dynamo
+          TABLE_NAME: !Ref DietTable
+          TABLE_ARN: !GetAtt DietTable.Arn
+          PUDDLE_BUCKET: !Ref PuddleBucket
+          GLUE_DATABASE: !Ref GlueDatabase
+          GLUE_TABLE: diet_items
+  WorkerDeadLetters:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      MessageRetentionPeriod: 1209600
+  ScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule-group/default
+      Policies:
+        - PolicyName: InvokeExportWorker
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ExportWorker.Arn
+  ExportPollSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: rate(1 minute)
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt ExportWorker.Arn
+        RoleArn: !GetAtt ScheduleRole.Arn
+        Input: "{}"
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 120
+          MaximumRetryAttempts: 2
+  NightlyExportSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: cron(0 3 * * ? *)
+      ScheduleExpressionTimezone: Asia/Jerusalem
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt ExportWorker.Arn
+        RoleArn: !GetAtt ScheduleRole.Arn
+        Input: '{"nightly":true}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
   WebFunction:
     Type: AWS::Lambda::WebFunction
     Properties:
@@ -99,26 +357,34 @@ Resources:
         - Key: Application
           Value: stuntman-diet
         - Key: Environment
-          Value: staging
+          Value: !Ref Environment
   WebFunctionRevision:
     Type: AWS::Lambda::WebFunctionRevision
     Properties:
       FunctionName: !Ref WebFunction
-      Description: !Sub Staging revision ${CodeKey}
+      Description: !Sub ${Environment} revision ${CodeKey}
       ServiceConfig:
         ExecutionRoleArn: !GetAtt WebFunctionRole.Arn
         TimeoutSeconds: 60
-        MaxConcurrencyPerEnvironment: 1
+        MaxConcurrencyPerEnvironment: 8
+        TelemetryConfig:
+          LoggingConfig:
+            LogGroup: !Ref WebLogGroup
         EnvironmentVariables:
           NODE_ENV: production
-          DB_PATH: /tmp/diet.db
+          STORE: dynamo
+          TABLE_NAME: !Ref DietTable
+          PUDDLE_BUCKET: !Ref PuddleBucket
+          TRENDS: athena
+          ATHENA_WORKGROUP: !Ref AthenaWorkgroup
+          ATHENA_RESULTS_BUCKET: !Ref PuddleBucket
+          GLUE_DATABASE: !Ref GlueDatabase
+          GLUE_TABLE: diet_items
           COGNITO_USER_POOL: !Ref CognitoUserPool
           COGNITO_DOMAIN: !Ref CognitoDomain
           COGNITO_CLIENT_ID: !Ref CognitoClientId
           SMOKE_CLIENT_ID: !Ref SmokeClientId
           BEDROCK_MODEL: !Ref BedrockModel
-          AWS_REGION: !Ref AWS::Region
-          S3_BACKUP_BUCKET: !Ref BackupBucket
           SYSTEM_PROMPT_PATH: !Sub s3://${CodeBucket}/prompts/stuntman-diet-system-prompt.md
           FOODS_PATH: seeds/foods.json
       BuildConfig:
@@ -132,17 +398,28 @@ Resources:
     Type: AWS::Lambda::WebFunctionEndpoint
     Properties:
       FunctionName: !Ref WebFunction
-      EndpointName: staging
+      EndpointName: !Ref Environment
       EndpointType: HomeRegion
       AuthType: ApplicationManaged
       ScalingConfig:
-        MaxEnvironments: 1
+        MaxEnvironments: 2
       RevisionWeights:
         - RevisionId: !GetAtt WebFunctionRevision.RevisionId
           Weight: 100
 Outputs:
   WebFunctionUrl:
-    Description: Staging HTTPS endpoint for the specified CloudFormation revision.
     Value: !Sub https://${WebFunctionEndpoint.DomainName}
-  BackupBucketName:
-    Value: !Ref BackupBucket
+  TableName:
+    Value: !Ref DietTable
+  TableArn:
+    Value: !GetAtt DietTable.Arn
+  PuddleBucketName:
+    Value: !Ref PuddleBucket
+  AthenaWorkgroupName:
+    Value: !Ref AthenaWorkgroup
+  GlueDatabaseName:
+    Value: !Ref GlueDatabase
+  GlueTableName:
+    Value: diet_items
+  ExportWorkerName:
+    Value: !Ref ExportWorker

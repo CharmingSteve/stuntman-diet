@@ -88,13 +88,11 @@ function selectedCalories(row: FoodRow, quantity: number, unit: string): number 
   return null;
 }
 
-function bestFood(db: Database.Database, raw: string, suggestedId: string | null): { row: FoodRow; stage: string } | null {
-  const rows = db.prepare("SELECT * FROM foods").all() as FoodRow[];
+function bestFood(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string, suggestedId: string | null): { row: FoodRow; stage: string } | null {
   void suggestedId;
   const normalized = normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
   const exact = rows.find((row) => normalizeFoodText(row.name) === normalized);
   if (exact) return { row: exact, stage: "exact" };
-  const aliases = db.prepare("SELECT food_id, normalized_alias FROM food_aliases").all() as Array<{ food_id: string; normalized_alias: string }>;
   const matches = new Set(aliases
     .filter((item) => item.normalized_alias === normalized || normalized.includes(item.normalized_alias))
     .map((item) => item.food_id));
@@ -102,6 +100,7 @@ function bestFood(db: Database.Database, raw: string, suggestedId: string | null
     const row = rows.find((candidate) => candidate.id === matches.values().next().value);
     if (row) return { row, stage: "alias" };
   }
+  if (matches.size > 1) return null;
   const ranked = rows.map((row) => {
     const aliasStrings = aliases.filter((alias) => alias.food_id === row.id).map((alias) => alias.normalized_alias);
     const score = Math.min(distance(normalized, normalizeFoodText(row.name)), ...aliasStrings.map((alias) => distance(normalized, alias)));
@@ -125,6 +124,19 @@ function recentEntry(db: Database.Database, userId: string, raw: string): { row:
 }
 
 export function resolveItems(db: Database.Database, userId: string, parsed: ParsedMessage): ResolvedItem[] {
+  const recent = recentEntry(db, userId, "the usual");
+  return resolveCatalog(foodRecords(db), parsed, recent ? {
+    foodId: recent.row.id, name: recent.name, calories: recent.calories,
+    quantity: recent.quantity, unit: recent.unit
+  } : null);
+}
+
+export function resolveCatalog(
+  foods: FoodRecord[], parsed: ParsedMessage,
+  recent: { foodId: string; name: string; calories: number; quantity: number; unit: string } | null = null
+): ResolvedItem[] {
+  const rows: FoodRow[] = foods.map((f) => ({ id: f.id, name: f.name, category: f.category, basis_json: JSON.stringify(f.basis), preferred_value_json: f.preferred_value ? JSON.stringify(f.preferred_value) : null }));
+  const aliases = foods.flatMap((f) => f.aliases.map((a) => ({ food_id: f.id, normalized_alias: normalizeFoodText(a) })));
   return parsed.items.map((item) => {
     const stated = numericCalories(item.raw);
     if (stated !== null) return {
@@ -133,14 +145,20 @@ export function resolveItems(db: Database.Database, userId: string, parsed: Pars
       matchStage: "user_number", supersedesEntryId: item.supersedes_entry_id
     };
     if (item.match_stage === "recent_log") {
-      const recent = recentEntry(db, userId, item.raw);
-      if (recent) return {
-        id: randomUUID(), foodId: recent.row.id, raw: item.raw, name: recent.name,
+      if (recent && /(same as yesterday|usual|another one)/i.test(item.raw)) return {
+        id: randomUUID(), foodId: recent.foodId, raw: item.raw, name: recent.name,
         quantity: recent.quantity, unit: recent.unit, calories: recent.calories,
         caloriesSource: "db", matchStage: "recent_log", supersedesEntryId: item.supersedes_entry_id
       };
+      return {
+        id: randomUUID(), foodId: null, raw: item.raw, name: item.display_name || item.raw,
+        quantity: item.quantity, unit: item.unit, calories: 0, caloriesSource: "estimate",
+        matchStage: "unresolved", supersedesEntryId: null
+      };
     }
-    const match = bestFood(db, item.raw, item.food_key);
+    const normalized = normalizeFoodText(item.raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+    const ambiguous = new Set(aliases.filter((a) => a.normalized_alias === normalized || normalized.includes(a.normalized_alias)).map((a) => a.food_id)).size > 1;
+    const match = bestFood(rows, aliases, item.raw, item.food_key);
     if (match) {
       const basis = JSON.parse(match.row.basis_json) as Record<string, unknown>;
       const missingQuantityUnit = typeof basis.calories_per_100g === "number"
@@ -167,7 +185,7 @@ export function resolveItems(db: Database.Database, userId: string, parsed: Pars
         caloriesSource: "db", matchStage: match.stage, supersedesEntryId: item.supersedes_entry_id
       };
     }
-    if (item.calories_source === "estimate" && item.calories !== null) return {
+    if (!ambiguous && item.calories_source === "estimate" && item.calories !== null) return {
       id: randomUUID(), foodId: null, raw: item.raw, name: item.display_name,
       quantity: item.quantity, unit: item.unit, calories: item.calories,
       caloriesSource: "estimate", matchStage: "estimate", supersedesEntryId: item.supersedes_entry_id

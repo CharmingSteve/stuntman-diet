@@ -4,6 +4,7 @@ export type RequestTime = {
   timezone: string;
   dayKey: string;
 };
+export class TimeInputError extends Error {}
 
 function validTimezone(timezone: string): boolean {
   try {
@@ -15,7 +16,7 @@ function validTimezone(timezone: string): boolean {
 }
 
 export function dayKeyFor(date: Date, timezone: string): string {
-  if (!validTimezone(timezone)) throw new Error("Invalid profile timezone");
+  if (!validTimezone(timezone)) throw new TimeInputError("Invalid profile timezone");
   const values = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
@@ -33,12 +34,12 @@ export function dayKeyFor(date: Date, timezone: string): string {
 export function resolveRequestTime(clientTime: unknown, timezone: string, fallback = new Date()): RequestTime {
   const hasProvided = typeof clientTime === "string";
   if (clientTime !== undefined && clientTime !== null && !hasProvided) {
-    throw new Error("client_time must be an ISO 8601 string");
+    throw new TimeInputError("client_time must be an ISO 8601 string");
   }
   const original = hasProvided ? clientTime : fallback.toISOString();
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|([+-])(\d{2}):(\d{2}))$/.exec(original);
   if (!match) {
-    throw new Error("client_time must include an explicit timezone offset");
+    throw new TimeInputError("client_time must include an explicit timezone offset");
   }
   const calendarDate = `${match[1]}-${match[2]}-${match[3]}`;
   const dateCheck = new Date(`${calendarDate}T00:00:00Z`);
@@ -50,15 +51,15 @@ export function resolveRequestTime(clientTime: unknown, timezone: string, fallba
   if (Number.isNaN(dateCheck.valueOf()) || dateCheck.toISOString().slice(0, 10) !== calendarDate ||
       hour > 23 || minute > 59 || second > 59 || offsetHour > 14 ||
       (offsetHour === 14 && offsetMinute !== 0) || offsetMinute > 59) {
-    throw new Error("client_time is invalid");
+    throw new TimeInputError("client_time is invalid");
   }
   const instant = new Date(original);
-  if (Number.isNaN(instant.valueOf())) throw new Error("client_time is invalid");
+  if (Number.isNaN(instant.valueOf())) throw new TimeInputError("client_time is invalid");
   return { instant, original, timezone, dayKey: dayKeyFor(instant, timezone) };
 }
 
 export function assertTimezone(timezone: unknown): asserts timezone is string {
   if (typeof timezone !== "string" || timezone.length > 100 || !validTimezone(timezone)) {
-    throw new Error("timezone must be a valid IANA timezone");
+    throw new TimeInputError("timezone must be a valid IANA timezone");
   }
 }
