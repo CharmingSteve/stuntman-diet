@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#152c24">
+    <meta name="description" content="A private daily food and calorie log.">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Stuntman Diet</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PERSONAL FOOD JOURNAL</p>
+        <h1>Stuntman Diet</h1>
+      </div>
+      <button id="logout" class="quiet hidden" type="button">Sign out</button>
+    </header>
+    <main>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <section id="login-panel" class="panel narrow hidden">
+        <h2>Sign in</h2>
+        <p>Use your private account to open your food log.</p>
+        <button id="login" type="button">Continue with Cognito</button>
+      </section>
+      <div id="app-panel" class="hidden">
+        <section class="panel" aria-labelledby="settings-title">
+          <h2 id="settings-title">Tracking settings</h2>
+          <p>Friday and Saturday are non-tracking days by default. Choose your own observed holidays; no religious or civil calendar is assumed. Settings and timezone changes do not rewrite past days.</p>
+          <form id="profile-form">
+            <label for="timezone">Timezone (IANA name)</label>
+            <input id="timezone" type="text" maxlength="100" placeholder="Asia/Jerusalem" autocomplete="off" required>
+            <fieldset id="weekdays">
+              <legend>Non-tracking weekdays</legend>
+              <label><input type="checkbox" name="weekday" value="0"> Sunday</label>
+              <label><input type="checkbox" name="weekday" value="1"> Monday</label>
+              <label><input type="checkbox" name="weekday" value="2"> Tuesday</label>
+              <label><input type="checkbox" name="weekday" value="3"> Wednesday</label>
+              <label><input type="checkbox" name="weekday" value="4"> Thursday</label>
+              <label><input type="checkbox" name="weekday" value="5" checked> Friday</label>
+              <label><input type="checkbox" name="weekday" value="6" checked> Saturday</label>
+            </fieldset>
+            <label for="holidays">Observed holiday dates</label>
+            <textarea id="holidays" rows="3" placeholder="2026-10-24, 2026-10-25" aria-describedby="holiday-help"></textarea>
+            <p id="holiday-help" class="hint">Use YYYY-MM-DD dates, separated by commas or new lines. Add a date range below to expand it into individual observed dates.</p>
+            <div class="form-row">
+              <label>Holiday range start<input id="holiday-from" type="date"></label>
+              <label>Holiday range end<input id="holiday-to" type="date"></label>
+              <button id="add-holidays" class="secondary" type="button">Add holiday range</button>
+            </div>
+            <button type="submit">Save tracking settings</button>
+          </form>
+          <p id="profile-status" class="status" role="status" aria-live="polite"></p>
+        </section>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">TODAY</p>
+              <h2>Log a meal</h2>
+            </div>
+          </div>
+          <p>Food on a non-tracking day needs an explicit “Tracked” day override in History first. Health readings can still be logged on non-tracking days.</p>
+          <form id="log-form">
+            <label for="message">What did you eat or burn?</label>
+            <textarea id="message" name="text" rows="3" maxlength="4000" placeholder="e.g. 250g cottage cheese, and 1550 + 1200 burned"></textarea>
+            <div class="form-row">
+              <label class="file-picker">Add food photo
+                <input id="image" type="file" accept="image/jpeg,image/png,image/webp">
+              </label>
+              <button type="submit">Log entry</button>
+            </div>
+          </form>
+          <p id="log-status" class="status" role="status" aria-live="polite"></p>
+          <pre id="response" class="response hidden"></pre>
+        </section>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p id="history-window" class="eyebrow">LAST 30 CALENDAR DAYS</p>
+              <h2>History</h2>
+            </div>
+            <button id="refresh-history" class="secondary" type="button">Refresh</button>
+          </div>
+          <form id="history-range" class="form-row">
+            <label>History from<input id="history-from" type="date" required></label>
+            <label>History to<input id="history-to" type="date" required></label>
+            <button type="submit" class="secondary">Load date range</button>
+            <button id="history-default" type="button" class="secondary">Last 30 calendar days</button>
+          </form>
+          <p class="hint">Load up to 93 calendar days at a time, including older dates. Missing and non-tracking days are not zero-intake days. Net means intake minus burn (negative is a deficit); unknown burn is never treated as zero.</p>
+          <p id="history-status" class="status" role="status" aria-live="polite"></p>
+          <div id="history" class="history"></div>
+        </section>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">YOUR DATA</p>
+              <h2>Trends</h2>
+            </div>
+            <button id="refresh-trends" class="secondary" type="button">Run report</button>
+          </div>
+          <form id="trends-range" class="form-row">
+            <label>Trends from<input id="trends-from" type="date" required></label>
+            <label>Trends to<input id="trends-to" type="date" required></label>
+            <label class="check"><input id="trends-all" type="checkbox"> All history</label>
+            <button type="submit" class="secondary">Apply range</button>
+          </form>
+          <p>Production reports query one Athena snapshot, not live chat data. Local SQLite reports may complete immediately. Nightly snapshots may be stale; writes after the snapshot time are not promised in a refresh.</p>
+          <div class="form-row">
+            <button id="refresh-analytics" type="button">Refresh analytics data</button>
+            <button id="cancel-trends" type="button" class="secondary hidden">Cancel query</button>
+          </div>
+          <p id="trends-status" class="status" role="status" aria-live="polite"></p>
+          <p id="analytics-status" class="status" role="status" aria-live="polite"></p>
+          <p id="snapshot">Data as of: not loaded</p>
+          <p class="hint">Partial-period totals cover only logged intake; they are not extrapolated. Whole-day net uses complete tracked days with recorded burn or an explicitly accepted assumed burn. Coverage columns show eligible, complete, partial, missing, excluded, and assumed-burn day counts. Calorie exclusions do not remove health readings.</p>
+          <div id="trends" class="trends"></div>
+        </section>
+        <section class="panel" aria-labelledby="import-title">
+          <h2 id="import-title">Import historical records</h2>
+          <p>Upload multiple supported JSON files (combined maximum 5 MB), including overlapping exports and 18+ months of records. Preview and review before anything is committed.</p>
+          <p>Canonical imports send only structured fields and source identities. Browser exports send assistant text from the current branch for table extraction; user messages and unrelated metadata are stripped before upload. Original files and full transcripts are not retained as import sources. Derived records and source provenance are retained. Raw HTML, browser history databases, and arbitrary browser/chat formats are not supported.</p>
+          <details>
+            <summary>Supported formats, conversion help, and canonical example</summary>
+            <h3>ChatGPT exports and normalized text conversations: table-only extraction</h3>
+            <p>Choose the browser-export format for a ChatGPT conversation object or array with id, mapping, and current_node. Only the active/current branch is followed, not alternate regenerated replies. Also supported: a text conversation object (or array) with id or conversation_id and messages containing id, role: "assistant", timestamp (ISO with offset) or create_time (epoch seconds), and content (a string or an object with a parts array of strings).</p>
+            <p>Only the latest supported two-column daily food table per inferred day is extracted. Dates come from the table message timestamp in your profile timezone, not dates guessed from prose. Every extracted row needs review. Free-text-only meals, health metrics, burn, and corrections are not extracted; the import may be incomplete. Verify the assigned day, timezone, final table, and source-versus-ledger totals. A reviewed day may differ from the source message day; the original timestamp and source identity are preserved. A total mismatch downgrades completeness to partial.</p>
+            <p>For browser chats without those tables, convert original evidence to canonical meal, burn, metric, summary, and correction records below for full fidelity. Keep stable source/message IDs, original timestamps with offsets, explicit corrections, and observed summary totals. Do not turn both cumulative tables and their component meals into additional intake.</p>
+            <h3>Canonical JSON: full-fidelity structured records</h3>
+            <p>Each file is an object with a stable conversation_id and messages array. Each message needs a stable id, timestamp (ISO 8601 with Z or an explicit offset), optional IANA timezone, and kind. Keep source IDs unchanged across reimports. Summary totals reconcile meals; they are not extra meals.</p>
+            <ul>
+              <li>meal: display_name, calories; optional quantity and unit</li>
+              <li>summary: total</li>
+              <li>correction: target_id and action (void or replace); replacement display_name and calories</li>
+              <li>metric: metric, value, unit</li>
+              <li>burn: total</li>
+            </ul>
+            <pre id="import-example" class="response"></pre>
+            <button id="download-example" type="button" class="secondary">Download canonical JSON example</button>
+          </details>
+          <form id="import-form">
+            <label for="import-format">Source format</label>
+            <select id="import-format">
+              <option value="canonical">Canonical JSON (full fidelity)</option>
+              <option value="browser">ChatGPT / text conversation JSON (daily tables only)</option>
+            </select>
+            <label for="import-files">Supported JSON files</label>
+            <input id="import-files" type="file" accept=".json,application/json" multiple required>
+            <label id="browser-import-warning" class="check hidden"><input id="browser-import-ack" type="checkbox"> I understand table-only extraction omits free-text meals, metrics, burn, and corrections, and I will review every extracted row.</label>
+            <button type="submit">Upload and preview</button>
+          </form>
+          <button id="resume-import" type="button" class="secondary hidden">Resume last import</button>
+          <p id="import-status" class="status" role="status" aria-live="polite"></p>
+          <div id="import-preview"></div>
+          <form id="import-review" class="hidden">
+            <p>Resolve every uncertainty explicitly: choose Skip, or Include (reviewed) with a verified date and timezone. Timezones are prefilled from the source when available, otherwise from your profile; verify them. A missing or invalid original timestamp offset cannot be repaired here: skip the record or fix and reupload the source file. Mark non-tracking dates as tracked below only when you intend an override.</p>
+            <div id="import-records"></div>
+            <label for="import-complete">User-confirmed complete days (optional)</label>
+            <textarea id="import-complete" rows="2" placeholder="YYYY-MM-DD, YYYY-MM-DD"></textarea>
+            <label for="import-tracked">Explicit tracked-day overrides (optional)</label>
+            <textarea id="import-tracked" rows="2" placeholder="YYYY-MM-DD, YYYY-MM-DD"></textarea>
+            <p class="hint">Dates are comma/newline separated. Imported days are not silently marked complete. A tracked override does not assert completeness or accept a default burn.</p>
+            <label class="check"><input id="import-reviewed" type="checkbox" required> I reviewed the records, issues, dates, overlaps, corrections, and daily totals.</label>
+            <button type="submit">Save review</button>
+          </form>
+          <form id="import-confirm" class="hidden">
+            <label class="check"><input id="import-confirmed" type="checkbox" required> Confirm this reviewed import. Confirmed source groups may be committed in chunks; a failed job may have partial progress.</label>
+            <button type="submit">Confirm import</button>
+          </form>
+          <div id="import-report"></div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,896 @@
+{
+  "version": "1.0",
+  "seeded_from": "prompts/foods.json",
+  "estimate_guardrails": {
+    "locale": "Israel",
+    "kosher": true,
+    "avoid": "American/European sugar-loaded defaults"
+  },
+  "foods": [
+    {
+      "id": "eshel_yogurt",
+      "name": "Eshel yogurt",
+      "aliases": [
+        "eshel"
+      ],
+      "category": "yogurt",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 150
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "gil_yogurt",
+      "name": "Gil yogurt",
+      "aliases": [
+        "gil"
+      ],
+      "category": "yogurt",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 120
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "gil_yogurt_small",
+      "name": "Small Gil yogurt (125g)",
+      "aliases": [
+        "small gil",
+        "גיל קטן"
+      ],
+      "category": "yogurt",
+      "basis": {
+        "type": "fixed_portion",
+        "portion_grams": 125,
+        "calories": 75
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "go_pro_yogurt",
+      "name": "Go/Pro yogurt",
+      "aliases": [
+        "go yogurt",
+        "pro yogurt",
+        "go/pro"
+      ],
+      "category": "yogurt",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 112
+      },
+      "notes": "varies with flavors",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "milky_pudding",
+      "name": "Milky pudding (low sugar/standard)",
+      "aliases": [
+        "milky"
+      ],
+      "category": "yogurt",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 169
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cottage_9",
+      "name": "Cottage cheese 9% (250g container)",
+      "aliases": [
+        "cottage 9",
+        "cottage cheese 9%"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 128,
+        "portions": [
+          {
+            "grams": 250,
+            "calories": 320
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cottage_5",
+      "name": "Cottage cheese 5% (250g container)",
+      "aliases": [
+        "cottage 5",
+        "cottage cheese 5%"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 97,
+        "portions": [
+          {
+            "grams": 250,
+            "calories": 243
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "mixed_vegetables_lowcal",
+      "name": "Low-calorie mixed vegetables",
+      "aliases": [
+        "mixed vegetables",
+        "mixed veggies",
+        "vegetable mix"
+      ],
+      "category": "vegetables",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 50
+      },
+      "notes": "celery, beets, squash, pumpkin, carrots, canned beans etc",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "boiled_potatoes",
+      "name": "Boiled potatoes",
+      "aliases": [
+        "boiled potato",
+        "potatoes boiled"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 87
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "mashed_potatoes",
+      "name": "Mashed potatoes",
+      "aliases": [
+        "mashed potato"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 90
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "vegetable_soup",
+      "name": "Vegetable soup/broth (no sugar/oil)",
+      "aliases": [
+        "soup",
+        "vegetable soup",
+        "broth"
+      ],
+      "category": "vegetables",
+      "basis": {
+        "type": "per_unit",
+        "unit": "mug",
+        "calories_per_unit": 40
+      },
+      "notes": "35-45 per mug; no sugar/oil",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "banana",
+      "name": "Banana",
+      "aliases": [],
+      "category": "fruit",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 105
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cucumber_medium",
+      "name": "Cucumber (medium)",
+      "aliases": [
+        "cucumber"
+      ],
+      "category": "vegetables",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 30
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "corn_cob_half",
+      "name": "Half corn cob",
+      "aliases": [
+        "corn cob",
+        "half corn"
+      ],
+      "category": "vegetables",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 60
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "quinoa_cooked",
+      "name": "Cooked quinoa",
+      "aliases": [
+        "quinoa"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 120
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "borekas",
+      "name": "Borekas (45g)",
+      "aliases": [
+        "borekas",
+        "borekitas"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "fixed_portion",
+        "portion_grams": 45,
+        "calories": 113
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "crackers",
+      "name": "Crackers",
+      "aliases": [
+        "cracker"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 467
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "sugarless_cookies",
+      "name": "Sugarless cookies",
+      "aliases": [
+        "sugarless cookie",
+        "cookies sugarless"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 345
+      },
+      "notes": "340-350; eaten almost daily",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "protein_noodles",
+      "name": "Protein noodles",
+      "aliases": [],
+      "category": "starches",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 77
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "abadi_cookies",
+      "name": "Abadi cookies",
+      "aliases": [
+        "abadi"
+      ],
+      "category": "starches",
+      "basis": {
+        "type": "per_unit",
+        "calories_per_unit": 60
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cream_cheese_lowfat",
+      "name": "Low fat cream cheese (store-bought, default)",
+      "aliases": [
+        "cream cheese",
+        "שמנת",
+        "low fat cream cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 180
+      },
+      "preferred_value": {
+        "calories_per_100g": 180
+      },
+      "notes": "prompt says 18 cal/heaping tsp but chat history consistently used 180/100g (40g->72, 50g->90); preferred_value set from history",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cream_cheese_highfat",
+      "name": "High-fat fatty cream cheese",
+      "aliases": [
+        "fatty cream cheese",
+        "high fat cream cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 253
+      },
+      "preferred_value": {
+        "calories_per_100g": 380
+      },
+      "notes": "user supplied 380/100g in chat; preferred_value wins",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "emek_goada_cheese",
+      "name": "Emek or Goada cheese",
+      "aliases": [
+        "emek",
+        "goada",
+        "emek cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 344
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "tal_haemek_cheese",
+      "name": "Tal Haemek cheese",
+      "aliases": [
+        "tal haemek"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 396
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "kfir_cheese",
+      "name": "Kfir cheese",
+      "aliases": [
+        "kfir"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 224
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "gilboa_cheese",
+      "name": "Gilboa cheese",
+      "aliases": [
+        "gilboa"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 298
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "lowfat_cheese_9",
+      "name": "Low fat cheese (9% fat)",
+      "aliases": [
+        "low fat cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 201
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cottage_cheese_serving",
+      "name": "Cottage cheese (serving)",
+      "aliases": [
+        "cottage cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 120
+      },
+      "notes": "110-130 per serving; container variants have own entries",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "mozzarella",
+      "name": "Mozzarella cheese",
+      "aliases": [
+        "mozzarella"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 297
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cheddar",
+      "name": "Cheddar cheese",
+      "aliases": [
+        "cheddar"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 405
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "american_cheese_euro",
+      "name": "American cheese (Euro brand)",
+      "aliases": [
+        "american cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 220
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "naama_processed_cheese",
+      "name": "Naama processed cheese",
+      "aliases": [
+        "naama",
+        "naama cheese"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 297,
+        "portions": [
+          {
+            "grams": 25,
+            "calories": 74
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "protein_drink",
+      "name": "Protein drink/shake",
+      "aliases": [
+        "protein shake",
+        "protein drink"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 270
+      },
+      "notes": "user often states his own number (200/100/60) - user_number wins",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "pure_peanut_butter",
+      "name": "Pure peanut butter",
+      "aliases": [
+        "peanut butter"
+      ],
+      "category": "spreads",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 590
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "hummus_achla",
+      "name": "Hummus Achla / store-bought hummus",
+      "aliases": [
+        "hummus",
+        "achla hummus",
+        "store hummus"
+      ],
+      "category": "spreads",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 170
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "hummus_eliyahu",
+      "name": "Hummus Eliyahu",
+      "aliases": [],
+      "category": "spreads",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 233
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "egg_salad",
+      "name": "Egg salad",
+      "aliases": [],
+      "category": "spreads",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 157,
+        "secondary": [
+          {
+            "unit": "tbsp",
+            "calories": 22
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "tehina_eggplant_spread",
+      "name": "Squash/tehina/eggplant spread",
+      "aliases": [
+        "tehina spread",
+        "eggplant spread",
+        "squash spread"
+      ],
+      "category": "spreads",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 181
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "french_processed_cheese",
+      "name": "French processed cheese (triangles)",
+      "aliases": [
+        "french cheese",
+        "cheese triangles",
+        "משולש גבינה"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 240,
+        "portions": [
+          {
+            "grams": 17.5,
+            "calories": 42
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "babybel",
+      "name": "Babybel cheese",
+      "aliases": [
+        "babybel"
+      ],
+      "category": "dairy",
+      "basis": {
+        "type": "per_unit",
+        "calories_per_unit": 61
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "pizza_slice_medium",
+      "name": "Pizza slice (medium)",
+      "aliases": [
+        "pizza slice",
+        "pizza"
+      ],
+      "category": "meals",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 230
+      },
+      "notes": "ambiguous - clarify which pizza if unclear",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "chia_seeds",
+      "name": "Chia seeds",
+      "aliases": [
+        "chia"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_gram",
+        "calories_per_gram": 5,
+        "secondary": [
+          {
+            "unit": "tsp",
+            "calories": 20
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "miso",
+      "name": "Miso",
+      "aliases": [],
+      "category": "other",
+      "basis": {
+        "type": "per_unit",
+        "unit": "tsp",
+        "calories_per_unit": 15
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "seaweed_packet",
+      "name": "Seaweed (small packet)",
+      "aliases": [
+        "seaweed"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "fixed_portion",
+        "calories": 30
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "mixed_nuts",
+      "name": "Mixed nuts",
+      "aliases": [
+        "nuts"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 600
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "fried_egg_medium",
+      "name": "Fried egg (medium)",
+      "aliases": [
+        "fried egg",
+        "egg"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_unit",
+        "unit": "egg M",
+        "calories_per_unit": 110
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "fried_egg_large",
+      "name": "Fried egg (large)",
+      "aliases": [
+        "large egg"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_unit",
+        "unit": "egg L",
+        "calories_per_unit": 125
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "tuna",
+      "name": "Tuna",
+      "aliases": [
+        "canned tuna"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 179,
+        "secondary": [
+          {
+            "unit": "tbsp",
+            "calories": 25
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "whiskey_shot",
+      "name": "Whiskey (1 shot)",
+      "aliases": [
+        "whiskey"
+      ],
+      "category": "drinks",
+      "basis": {
+        "type": "per_unit",
+        "unit": "shot",
+        "calories_per_unit": 97
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "turkey_roll",
+      "name": "Turkey roll/breast",
+      "aliases": [
+        "turkey",
+        "turkey breast",
+        "turkey roll"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 161
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "schnitzlon",
+      "name": "Schnitzlon",
+      "aliases": [],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 250
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "gefilte_fish",
+      "name": "Gefilte fish",
+      "aliases": [],
+      "category": "meat",
+      "basis": {
+        "type": "per_unit",
+        "calories_per_unit": 130
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "hamburger_kosher",
+      "name": "Hamburger (kosher, fatty)",
+      "aliases": [
+        "hamburger",
+        "burger"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 289
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "dark_chocolate",
+      "name": "Pure/Dark chocolate",
+      "aliases": [
+        "dark chocolate",
+        "chocolate"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 598
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "salami",
+      "name": "Salami/pepperoni (סלמי תה)",
+      "aliases": [
+        "salami",
+        "pepperoni"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 260
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "mortadella",
+      "name": "Mortadella (זוגלובק כשר)",
+      "aliases": [
+        "mortodelo",
+        "mortadella"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 222
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "tilapia_baked",
+      "name": "Baked tilapia",
+      "aliases": [
+        "tilapia"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 141
+      },
+      "notes": "128-154 range; very common dinner item",
+      "source": "prompt_seed"
+    },
+    {
+      "id": "cabanos",
+      "name": "Cabanos",
+      "aliases": [],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 370
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "wellness_protein_bar",
+      "name": "Wellness protein bar",
+      "aliases": [
+        "protein bar",
+        "wellness bar"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "fixed_portion",
+        "portion_grams": 35,
+        "calories": 162
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "sugarless_halva",
+      "name": "Sugarless halva",
+      "aliases": [
+        "halva"
+      ],
+      "category": "other",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 470
+      },
+      "source": "prompt_seed"
+    },
+    {
+      "id": "obolon_beer",
+      "name": "Obolon beer (16%)",
+      "aliases": [
+        "obolon",
+        "beer"
+      ],
+      "category": "drinks",
+      "basis": {
+        "type": "per_100ml",
+        "calories_per_100ml": 117,
+        "portions": [
+          {
+            "ml": 500,
+            "calories": 585
+          }
+        ]
+      },
+      "source": "prompt_seed"
+    }
+  ]
+}

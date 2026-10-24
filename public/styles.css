@@ -1,0 +1,112 @@
+:root {
+  color-scheme: light;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1a2922;
+  background: #f3f5f1;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; overflow-wrap: anywhere; }
+button, input, textarea, select { font: inherit; }
+button {
+  border: 0;
+  border-radius: 0.65rem;
+  background: #285743;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+}
+button:hover { background: #1e4534; }
+button:disabled { cursor: wait; opacity: 0.65; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, summary:focus-visible, .table-scroll:focus-visible {
+  outline: 3px solid #4a8468;
+  outline-offset: 3px;
+}
+button.secondary { background: #e7ede8; color: #234b37; }
+button.quiet { background: transparent; color: white; border: 1px solid #82958a; }
+.topbar {
+  align-items: center;
+  background: #152c24;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem max(calc((100vw - 900px) / 2), 1.2rem);
+}
+.topbar h1 { font-size: 1.4rem; margin: 0; }
+.eyebrow { color: #526c56; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.13em; margin: 0 0 0.35rem; }
+.topbar .eyebrow { color: #b7ccb9; }
+main { margin: 2rem auto; max-width: 1100px; padding: 0 1rem 3rem; }
+.panel {
+  background: white;
+  border: 1px solid #e2e8e0;
+  border-radius: 1rem;
+  box-shadow: 0 4px 16px #172e2210;
+  margin-bottom: 1rem;
+  padding: 1.3rem;
+}
+.panel.narrow { margin: 10vh auto; max-width: 420px; }
+h2 { font-size: 1.25rem; margin: 0; }
+h3 { font-size: 0.95rem; margin: 1.2rem 0 0.35rem; }
+.section-heading, .form-row { align-items: center; display: flex; gap: 1rem; justify-content: space-between; }
+input, textarea, select {
+  background: #fbfcfa;
+  border: 1px solid #cfd9d0;
+  border-radius: 0.55rem;
+  color: #1a2922;
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.7rem;
+  width: 100%;
+}
+textarea { margin: 0.4rem 0 0.8rem; resize: vertical; }
+form > label { display: block; font-size: 0.9rem; font-weight: 650; margin-top: 1.2rem; }
+.form-row { flex-wrap: wrap; margin: 1rem 0; align-items: end; }
+.form-row > label { flex: 1 1 160px; }
+form > button { margin-top: 0.8rem; }
+fieldset { border: 1px solid #cfd9d0; border-radius: 0.55rem; margin: 1rem 0; padding: 1rem; }
+fieldset label { display: inline-flex; gap: 0.4rem; align-items: center; margin: 0.4rem 0.8rem 0.4rem 0; }
+input[type="checkbox"] { display: inline-block; width: auto; margin: 0; flex: 0 0 auto; accent-color: #285743; }
+.check { display: flex; align-items: baseline; gap: 0.6rem; line-height: 1.5; }
+form > label.check { display: flex; }
+.hint { color: #526459; font-size: 0.9rem; line-height: 1.6; }
+p, li { line-height: 1.55; overflow-wrap: anywhere; }
+.file-picker { color: #315d44; cursor: pointer; font-size: 0.9rem; font-weight: 650; }
+.file-picker input { border: 0; margin: 0.3rem 0 0; padding: 0; }
+.status { color: #315d44; min-height: 1.25rem; }
+.status.error { color: #a52c2c; }
+.response {
+  background: #f5f8f4;
+  border-radius: 0.6rem;
+  font: inherit;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  white-space: pre-wrap;
+}
+.history-day { border-top: 1px solid #edf0ec; padding: 0.8rem 0; }
+.history-day summary { cursor: pointer; font-weight: 650; }
+.history-day ul { color: #526459; line-height: 1.8; }
+.history-day p, .trends p { color: #526459; margin: 0.4rem 0; }
+.day-controls { background: #f5f8f4; border-radius: 0.6rem; padding: 0.8rem; margin-top: 1rem; }
+.day-controls > label { margin: 0.7rem 0; }
+.table-scroll { overflow-x: auto; max-width: 100%; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; text-align: left; font-size: 0.9rem; }
+caption { text-align: left; font-weight: 700; padding: 0.5rem 0; }
+th, td { border-bottom: 1px solid #dce5dd; padding: 0.65rem; vertical-align: top; min-width: 95px; }
+th { background: #eef3ee; }
+td label { display: block; font-size: 0.8rem; min-width: 155px; }
+td input, td select { min-width: 160px; }
+summary { cursor: pointer; line-height: 1.6; }
+[aria-busy="true"] { opacity: 0.7; }
+#import-report .response { max-height: 32rem; overflow: auto; }
+.trends { line-height: 1.5; }
+.hidden { display: none !important; }
+@media (max-width: 520px) {
+  main { margin-top: 1rem; }
+  .panel { padding: 1rem; }
+  .section-heading { align-items: flex-start; flex-wrap: wrap; }
+  .form-row > label { flex-basis: 100%; }
+  button { min-height: 44px; }
+}
