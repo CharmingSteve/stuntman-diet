@@ -51,3 +51,20 @@ describe("stated amounts", () => {
     expect(resolve("2 tbsp peanut butter", { unit: "tbsp", quantity: 2 }).calories).toBe(188);
   });
 });
+
+describe("ambiguity tolerance", () => {
+  const food = (id: string, per100: number): FoodRecord => ({ id, name: id, aliases: ["peanut butter"], category: "spreads", basis: { type: "per_100g", calories_per_100g: per100 } });
+  const parsed = (quantity: number) => ({ items: [{
+    raw: `${quantity}g peanut butter`, food_key: null, match_stage: "alias", display_name: "Peanut butter", quantity, unit: "g",
+    calories: null, calories_source: "db", confidence: "high", supersedes_entry_id: null
+  }] }) as never;
+  const variants = [food("pure_pb", 590), food("sweet_pb", 600)];
+  it("does not ask when candidates are within 50 kcal", () => {
+    const r = resolveCatalog(variants, parsed(30))[0]!;
+    expect(r.matchStage).not.toBe("unresolved");
+    expect(r.calories).toBeGreaterThan(170);
+  });
+  it("asks only when candidates differ by more than 50 kcal", () => {
+    expect(resolveCatalog([food("pure_pb", 590), food("candied_pb", 700)], parsed(100))[0]?.matchStage).toBe("unresolved");
+  });
+});

@@ -57,8 +57,13 @@ Return exactly one JSON object:
    never American/European sugar-loaded defaults. match_stage=estimate,
    confidence=low. The app may then run a web search and will store the
    confirmed value in the DB.
-5. If a food is genuinely ambiguous (e.g. "pizza" — which kind?), put it in
-   needs_clarification instead of guessing. One short question max.
+5. Do NOT interview Steve. For an ambiguous food (pizza, peanut butter, bread,
+   hummus), pick the most common variant, ALWAYS provide a calorie estimate for
+   the amount he gave, and state the assumption in "notes". Ask via
+   needs_clarification ONLY when the plausible variants for the amount given
+   differ by MORE THAN 50 calories. Pure vs sweetened peanut butter is within
+   50 calories at normal portions: never ask. With no amount, assume one
+   typical serving. Always fill "calories" for every item, even DB matches.
 
 ## Portion parsing
 - Grams/ml: "120g", "half a container" (know container sizes from DB).
