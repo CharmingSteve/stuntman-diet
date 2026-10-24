@@ -131,13 +131,26 @@ export function resolveItems(db: Database.Database, userId: string, parsed: Pars
   } : null);
 }
 
+// A mass or volume the user typed is authoritative over the model's unit/quantity guess.
+function withStatedAmount(item: ParsedMessage["items"][number]): ParsedMessage["items"][number] {
+  const amountPattern = /(\d+(?:\.\d+)?)\s*(kg|grams?|gr|g|ml)\b/i;
+  const found = amountPattern.exec(item.raw) ?? amountPattern.exec(item.display_name);
+  if (!found) return item;
+  const amount = Number(found[1]);
+  const unit = found[2]!.toLowerCase();
+  if (!Number.isFinite(amount) || amount <= 0) return item;
+  if (unit === "ml") return { ...item, quantity: amount, unit: "ml" };
+  return { ...item, quantity: unit === "kg" ? amount * 1000 : amount, unit: "g" };
+}
+
 export function resolveCatalog(
   foods: FoodRecord[], parsed: ParsedMessage,
   recent: { foodId: string; name: string; calories: number; quantity: number; unit: string } | null = null
 ): ResolvedItem[] {
   const rows: FoodRow[] = foods.map((f) => ({ id: f.id, name: f.name, category: f.category, basis_json: JSON.stringify(f.basis), preferred_value_json: f.preferred_value ? JSON.stringify(f.preferred_value) : null }));
   const aliases = foods.flatMap((f) => f.aliases.map((a) => ({ food_id: f.id, normalized_alias: normalizeFoodText(a) })));
-  return parsed.items.map((item) => {
+  return parsed.items.map((measured) => {
+    const item = withStatedAmount(measured);
     const stated = numericCalories(item.raw);
     if (stated !== null) return {
       id: randomUUID(), foodId: null, raw: item.raw, name: item.display_name || item.raw,

@@ -30,3 +30,24 @@ describe("editable catalog", () => {
     expect(resolveCatalog(foodsWithPreference, { ...parsed, items: [{ ...parsed.items[0]!, quantity: 250, unit: "g" }] })[0]?.calories).toBe(500);
   });
 });
+
+describe("stated amounts", () => {
+  const seed = JSON.parse(readFileSync("seeds/foods.json", "utf8")) as { foods: FoodRecord[] };
+  const item = (raw: string, over: Record<string, unknown>) => ({
+    raw, food_key: null, match_stage: "alias", display_name: raw, quantity: null, unit: "portion",
+    calories: null, calories_source: "db", confidence: "high", supersedes_entry_id: null, ...over
+  });
+  const resolve = (raw: string, over: Record<string, unknown> = {}) =>
+    resolveCatalog(seed.foods, { items: [item(raw, over)] } as never)[0]!;
+  it("uses the grams the user typed even when the model returns another unit", () => {
+    const r = resolve("30 grams of peanut butter", { unit: "portion", quantity: 1 });
+    expect([r.matchStage, r.calories, r.quantity, r.unit]).toEqual(["alias", 177, 30, "g"]);
+  });
+  it("takes grams from the display name when the model drops them from raw", () => {
+    const r = resolve("pure peanut butter", { display_name: "Pure peanut butter (30g)", unit: "unit", quantity: 1 });
+    expect([r.matchStage, r.calories]).toEqual(["exact", 177]);
+  });
+  it("resolves spoon measures of peanut butter", () => {
+    expect(resolve("2 tbsp peanut butter", { unit: "tbsp", quantity: 2 }).calories).toBe(188);
+  });
+});

@@ -496,7 +496,11 @@
       "category": "spreads",
       "basis": {
         "type": "per_100g",
-        "calories_per_100g": 590
+        "calories_per_100g": 590,
+        "secondary": [
+          { "unit": "tbsp", "calories": 94 },
+          { "unit": "tsp", "calories": 31 }
+        ]
       },
       "source": "prompt_seed"
     },
