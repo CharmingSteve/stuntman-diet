@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Standalone staging authentication and isolated machine-to-machine smoke client.
+Parameters:
+  CallbackUrl:
+    Type: String
+    Default: http://localhost:3000/
+    AllowedPattern: ^(http://localhost:3000/|https://[a-z0-9.-]+/)$
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 16
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      UserPoolAddOns:
+        AdvancedSecurityMode: ENFORCED
+  Domain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub stuntman-diet-staging-${AWS::AccountId}
+      UserPoolId: !Ref UserPool
+  BrowserClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: browser
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !Ref CallbackUrl
+      LogoutURLs:
+        - !Ref CallbackUrl
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+  SmokeScopes:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      UserPoolId: !Ref UserPool
+      Identifier: diet-smoke
+      Name: Staging smoke checks
+      Scopes:
+        - ScopeName: parse
+          ScopeDescription: Isolated staging food parse
+  SmokeClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: SmokeScopes
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: staging-smoke
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - client_credentials
+      AllowedOAuthScopes:
+        - diet-smoke/parse
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 5
+      TokenValidityUnits:
+        AccessToken: minutes
+Outputs:
+  CognitoUserPool:
+    Value: !Ref UserPool
+  CognitoClientId:
+    Value: !Ref BrowserClient
+  CognitoDomain:
+    Value: !Sub https://${Domain}.auth.${AWS::Region}.amazoncognito.com
+  SmokeClientId:
+    Value: !Ref SmokeClient

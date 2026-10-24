@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deployment blocked pending EFS mounts and single-environment Web Function support. Not production-ready.
+Metadata:
+  DeploymentStatus: Blocked
+  DeploymentBlockers:
+    - Web Function revisions cannot mount EFS.
+    - Web Function endpoints require MaxEnvironments of at least 2; SQLite requires 1.
+Parameters:
+  CodeBucket:
+    Type: String
+    Description: Existing versioned bucket created by infra/artifacts.yaml.
+  CodeKey:
+    Type: String
+    Description: S3 object key for the versioned Web Function ZIP.
+  AccessLogsBucket:
+    Type: String
+    Description: Private access log destination created by infra/artifacts.yaml.
+  CognitoUserPool:
+    Type: String
+    Description: Cognito User Pool ID or issuer URL used by the Hono JWT middleware.
+  CognitoDomain:
+    Type: String
+    Description: Cognito hosted UI domain, without a trailing slash.
+  CognitoClientId:
+    Type: String
+    Description: Public Cognito app client ID used by the PWA.
+  SmokeClientId:
+    Type: String
+    Description: Isolated Cognito machine-to-machine client permitted to smoke test the parse route.
+  BedrockModel:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+    AllowedPattern: ^(amazon\.nova-lite-v1(:0)?|anthropic\.claude-haiku[^/]*)$
+    Description: Staging model, restricted to the model families granted below.
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogsBucket
+        LogFilePrefix: access/backups/
+  WebFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StagingWebFunctionPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}:*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}.local:*
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${BackupBucket.Arn}/images/*
+                  - !Sub ${BackupBucket.Arn}/backups/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${CodeBucket}/prompts/stuntman-diet-system-prompt.md
+  WebFunction:
+    Type: AWS::Lambda::WebFunction
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}
+      Tags:
+        - Key: Application
+          Value: stuntman-diet
+        - Key: Environment
+          Value: staging
+  WebFunctionRevision:
+    Type: AWS::Lambda::WebFunctionRevision
+    Properties:
+      FunctionName: !Ref WebFunction
+      Description: !Sub Staging revision ${CodeKey}
+      ServiceConfig:
+        ExecutionRoleArn: !GetAtt WebFunctionRole.Arn
+        TimeoutSeconds: 60
+        MaxConcurrencyPerEnvironment: 1
+        EnvironmentVariables:
+          NODE_ENV: production
+          DB_PATH: /tmp/diet.db
+          COGNITO_USER_POOL: !Ref CognitoUserPool
+          COGNITO_DOMAIN: !Ref CognitoDomain
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          SMOKE_CLIENT_ID: !Ref SmokeClientId
+          BEDROCK_MODEL: !Ref BedrockModel
+          AWS_REGION: !Ref AWS::Region
+          S3_BACKUP_BUCKET: !Ref BackupBucket
+          SYSTEM_PROMPT_PATH: !Sub s3://${CodeBucket}/prompts/stuntman-diet-system-prompt.md
+          FOODS_PATH: seeds/foods.json
+      BuildConfig:
+        RuntimeConfig:
+          Runtime: nodejs24.x
+        CodeConfig:
+          S3Object:
+            Bucket: !Ref CodeBucket
+            Key: !Ref CodeKey
+  WebFunctionEndpoint:
+    Type: AWS::Lambda::WebFunctionEndpoint
+    Properties:
+      FunctionName: !Ref WebFunction
+      EndpointName: staging
+      EndpointType: HomeRegion
+      AuthType: ApplicationManaged
+      ScalingConfig:
+        MaxEnvironments: 1
+      RevisionWeights:
+        - RevisionId: !GetAtt WebFunctionRevision.RevisionId
+          Weight: 100
+Outputs:
+  WebFunctionUrl:
+    Description: Staging HTTPS endpoint for the specified CloudFormation revision.
+    Value: !Sub https://${WebFunctionEndpoint.DomainName}
+  BackupBucketName:
+    Value: !Ref BackupBucket

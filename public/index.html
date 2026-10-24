@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#152c24">
+    <meta name="description" content="A private daily food and calorie log.">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Stuntman Diet</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PERSONAL FOOD JOURNAL</p>
+        <h1>Stuntman Diet</h1>
+      </div>
+      <button id="logout" class="quiet hidden" type="button">Sign out</button>
+    </header>
+    <main>
+      <section id="login-panel" class="panel narrow hidden">
+        <h2>Sign in</h2>
+        <p>Use your private account to open your food log.</p>
+        <button id="login" type="button">Continue with Cognito</button>
+      </section>
+      <div id="app-panel" class="hidden">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">TODAY</p>
+              <h2>Log a meal</h2>
+            </div>
+            <label class="timezone-label">Timezone
+              <input id="timezone" type="text" maxlength="100" placeholder="Asia/Jerusalem" autocomplete="off">
+            </label>
+          </div>
+          <form id="log-form">
+            <label for="message">What did you eat or burn?</label>
+            <textarea id="message" name="text" rows="3" maxlength="4000" placeholder="e.g. 250g cottage cheese, and 1550 + 1200 burned" required></textarea>
+            <div class="form-row">
+              <label class="file-picker">Add food photo
+                <input id="image" type="file" accept="image/jpeg,image/png,image/webp">
+              </label>
+              <button type="submit">Log entry</button>
+            </div>
+          </form>
+          <p id="status" class="status" role="status" aria-live="polite"></p>
+          <pre id="response" class="response hidden"></pre>
+        </section>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">LAST 21 DAYS</p>
+              <h2>History</h2>
+            </div>
+            <button id="refresh-history" class="secondary" type="button">Refresh</button>
+          </div>
+          <div id="history" class="history"></div>
+        </section>
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">YOUR DATA</p>
+              <h2>Trends</h2>
+            </div>
+            <button id="refresh-trends" class="secondary" type="button">Refresh</button>
+          </div>
+          <div id="trends" class="trends"></div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
