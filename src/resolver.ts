@@ -88,6 +88,14 @@ function selectedCalories(row: FoodRow, quantity: number, unit: string): number 
   return null;
 }
 
+const ambiguityToleranceKcal = 50;
+
+function aliasCandidates(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string): FoodRow[] {
+  const normalized = normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+  const ids = new Set(aliases.filter((a) => a.normalized_alias === normalized || normalized.includes(a.normalized_alias)).map((a) => a.food_id));
+  return rows.filter((row) => ids.has(row.id));
+}
+
 function bestFood(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string, suggestedId: string | null): { row: FoodRow; stage: string } | null {
   void suggestedId;
   const normalized = normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
@@ -169,24 +177,38 @@ export function resolveCatalog(
         matchStage: "unresolved", supersedesEntryId: null
       };
     }
-    const normalized = normalizeFoodText(item.raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
-    const ambiguous = new Set(aliases.filter((a) => a.normalized_alias === normalized || normalized.includes(a.normalized_alias)).map((a) => a.food_id)).size > 1;
     const match = bestFood(rows, aliases, item.raw, item.food_key);
+    const price = (row: FoodRow): { calories: number | null; quantity: number; unit: string } => {
+      const basis = JSON.parse(row.basis_json) as Record<string, unknown>;
+      const massBased = typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" || typeof basis.calories_per_gram === "number";
+      const quantity = item.quantity ?? (typeof basis.calories_per_gram === "number" ? 1
+        : typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" ? 100 : 1);
+      const unit = item.quantity === null && massBased
+        ? (typeof basis.calories_per_100ml === "number" && typeof basis.calories_per_100g !== "number" ? "ml" : "g") : item.unit;
+      return { calories: selectedCalories(row, quantity, unit), quantity, unit };
+    };
+    if (!match) {
+      // Similar candidates are not worth a question: only ask when they differ by more than the tolerance.
+      const priced = aliasCandidates(rows, aliases, item.raw).map((row) => ({ row, ...price(row) }))
+        .filter((p): p is typeof p & { calories: number } => p.calories !== null).sort((a, b) => a.calories - b.calories);
+      const low = priced[0], high = priced[priced.length - 1];
+      if (low && high && priced.length > 1 && high.calories - low.calories <= ambiguityToleranceKcal) {
+        const pick = priced[Math.floor(priced.length / 2)]!;
+        return {
+          id: randomUUID(), foodId: pick.row.id, raw: item.raw, name: item.display_name || pick.row.name,
+          quantity: pick.quantity, unit: pick.unit, calories: pick.calories, caloriesSource: "db",
+          matchStage: "alias", supersedesEntryId: item.supersedes_entry_id
+        };
+      }
+    }
     if (match) {
-      const basis = JSON.parse(match.row.basis_json) as Record<string, unknown>;
-      const missingQuantityUnit = typeof basis.calories_per_100g === "number"
-        ? "g"
-        : typeof basis.calories_per_100ml === "number" ? "ml" : "g";
-      const defaultQuantity = typeof basis.calories_per_gram === "number"
-        ? 1
-        : typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" ? 100 : 1;
-      const quantity = item.quantity ?? defaultQuantity;
-      const unit = item.quantity === null && (
-        typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" ||
-        typeof basis.calories_per_gram === "number"
-      ) ? missingQuantityUnit : item.unit;
-      const calories = selectedCalories(match.row, quantity, unit);
-      if (calories === null) return {
+      const { calories: dbCalories, quantity, unit } = price(match.row);
+      const calories = dbCalories;
+      if (calories === null) return item.calories !== null ? {
+        id: randomUUID(), foodId: match.row.id, raw: item.raw,
+        name: item.display_name || match.row.name, quantity, unit, calories: Math.round(item.calories),
+        caloriesSource: "estimate", matchStage: "estimate", supersedesEntryId: item.supersedes_entry_id
+      } : {
         id: randomUUID(), foodId: match.row.id, raw: item.raw,
         name: item.display_name || match.row.name, quantity, unit, calories: 0,
         caloriesSource: "db", matchStage: "unresolved", supersedesEntryId: item.supersedes_entry_id
@@ -198,7 +220,7 @@ export function resolveCatalog(
         caloriesSource: "db", matchStage: match.stage, supersedesEntryId: item.supersedes_entry_id
       };
     }
-    if (!ambiguous && item.calories_source === "estimate" && item.calories !== null) return {
+    if (item.calories !== null) return {
       id: randomUUID(), foodId: null, raw: item.raw, name: item.display_name,
       quantity: item.quantity, unit: item.unit, calories: item.calories,
       caloriesSource: "estimate", matchStage: "estimate", supersedesEntryId: item.supersedes_entry_id
