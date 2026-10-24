@@ -42,11 +42,15 @@ const { access_token: token } = await tokenResponse.json();
 assert.ok(token, "Missing access token");
 if (process.env.GITHUB_ACTIONS) console.info(`::add-mask::${token}`);
 const parse = await fetch(`${base}/api/chat`, {
-  method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+    "Idempotency-Key": `smoke:${randomUUID()}` },
   body: JSON.stringify({ text: "protein drink 200 calories", client_time: "2025-01-05T12:00:00+02:00" })
 });
-assert.equal(parse.status, 200, "Bedrock parse smoke");
 const parsed = await parse.json();
+if (parse.status !== 200) {
+  const error = typeof parsed.error === "string" ? parsed.error.slice(0, 500) : "No structured error";
+  throw new Error(`Bedrock parse smoke returned HTTP ${parse.status}: ${error}`);
+}
 assert.equal(parsed.intent, "food_log");
 assert.ok(parsed.summary);
 assert.equal(parsed.items[0].calories, 200);

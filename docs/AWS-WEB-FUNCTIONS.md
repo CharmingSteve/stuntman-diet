@@ -67,11 +67,16 @@ Web Function revisions in the staging and production stacks.
   running jobs. A second schedule runs at **03:00 Asia/Jerusalem** with
   `{"nightly":true}` to initiate nightly exports. Scheduler's role can invoke
   only that worker. Lambda async failures go to an encrypted 14-day SQS DLQ.
-- Separate 30-day KMS-encrypted app and worker log groups. The worker needs
+- Separate 30-day KMS-encrypted app centralized, app `.local`, and worker log
+  groups. Native Web Functions always write to the `.local` companion first;
+  inspect it for immediate regional errors, not only the asynchronously
+  centralized group. Both are created before the revision receives traffic,
+  and execution-role stream access is scoped to exactly those two groups.
+  The worker needs
   only regional AWS APIs, not a VPC/NAT; this is a documented Checkov exception.
   The access-log destination's recursive-logging exception is also documented.
   KMS key policy `Resource: "*"` denotes **the attached key only**, with the
-  Logs principal constrained to the exact two encryption-context log ARNs;
+  Logs principal constrained to the exact three encryption-context log ARNs;
   application IAM policies never grant account-wide resources/actions.
 
 Environment settings for the app:
@@ -211,7 +216,11 @@ application and Linux dependencies, not a smoke-only reimplementation.
 
 ## CI/CD and production approvals
 
-PRs run tests, TypeScript build, and Linux ZIP packaging. Main pushes deploy
+PRs run tests, TypeScript build, and Linux ZIP packaging. A digest-pinned
+DynamoDB Local 3.1.0 service is bound only to loopback port 8000; readiness is
+checked before `npm test`, with `DYNAMODB_ENDPOINT` explicitly configured so
+both SQLite and DynamoDB store contract suites execute. CI fails closed if
+the endpoint is absent. Main pushes deploy
 staging and run all cloud smokes. Existing repository secrets
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` configure the account-restricted
 deployment identity; no OIDC migration or new long-lived secrets are required.

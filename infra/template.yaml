@@ -56,6 +56,7 @@ Resources:
               ArnEquals:
                 kms:EncryptionContext:aws:logs:arn:
                   - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}.local
                   - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-exports
   DietTable:
     Type: AWS::DynamoDB::Table
@@ -177,6 +178,12 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${AWS::StackName}-exports
       RetentionInDays: 30
       KmsKeyId: !GetAtt LogKey.Arn
+  WebLocalLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/web/${AWS::StackName}.local
+      RetentionInDays: 30
+      KmsKeyId: !GetAtt LogKey.Arn
   WebFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -194,7 +201,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !GetAtt WebLogGroup.Arn
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}:log-stream:*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/web/${AWS::StackName}.local:log-stream:*
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:BatchGetItem, dynamodb:ConditionCheckItem]
                 Resource: !GetAtt DietTable.Arn
@@ -246,7 +255,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !GetAtt WorkerLogGroup.Arn
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-exports:log-stream:*
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:ConditionCheckItem, dynamodb:DescribeContinuousBackups, dynamodb:ExportTableToPointInTime]
                 Resource: !GetAtt DietTable.Arn
@@ -360,6 +369,7 @@ Resources:
           Value: !Ref Environment
   WebFunctionRevision:
     Type: AWS::Lambda::WebFunctionRevision
+    DependsOn: WebLocalLogGroup
     Properties:
       FunctionName: !Ref WebFunction
       Description: !Sub ${Environment} revision ${CodeKey}
@@ -370,12 +380,15 @@ Resources:
         TelemetryConfig:
           LoggingConfig:
             LogGroup: !Ref WebLogGroup
+            ApplicationLogLevel: INFO
+            SystemLogLevel: INFO
         EnvironmentVariables:
           NODE_ENV: production
           STORE: dynamo
           TABLE_NAME: !Ref DietTable
           PUDDLE_BUCKET: !Ref PuddleBucket
           TRENDS: athena
+          IMAGE_BUCKET: !Ref PuddleBucket
           ATHENA_WORKGROUP: !Ref AthenaWorkgroup
           ATHENA_RESULTS_BUCKET: !Ref PuddleBucket
           GLUE_DATABASE: !Ref GlueDatabase

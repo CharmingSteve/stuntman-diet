@@ -74,6 +74,8 @@ export async function parseMessage(
   image?: FoodImage
 ): Promise<ParsedMessage> {
   const system = await loadSystemPrompt();
+  const jsonSchema = z.toJSONSchema(responseSchema);
+  const { $schema: _schemaVersion, ...toolSchema } = jsonSchema;
   const foodDb = JSON.stringify(foods);
   const prompt = [
     `client_time: ${clientTime}`,
@@ -90,15 +92,21 @@ export async function parseMessage(
     if (image) content.push({ image: { format: image.mediaType, source: { bytes: image.bytes } } });
     const response = await client.send(new ConverseCommand({
       modelId: process.env.BEDROCK_MODEL ?? "amazon.nova-lite-v1:0",
-      system: [{ text: system }],
+      system: [{ text: `${system}\n\nReturn the complete result by calling record_food_intent. Include EVERY required property, using null or empty arrays where appropriate. Do not emit markdown or prose.` }],
       messages: [{
         role: "user",
         content
       }],
-      inferenceConfig: { maxTokens: 1400, temperature: 0.1 }
+      inferenceConfig: { maxTokens: 2200, temperature: 0.1 },
+      toolConfig: {
+        tools: [{ toolSpec: { name: "record_food_intent", description: "Return the complete validated food logging intent", inputSchema: { json: z.json().parse(toolSchema) } } }],
+        toolChoice: { tool: { name: "record_food_intent" } }
+      }
     }));
     const textBlock = response.output?.message?.content?.find((block) => "text" in block);
     try {
+      const tool = response.output?.message?.content?.find((block) => block.toolUse?.name === "record_food_intent")?.toolUse;
+      if (tool) return responseSchema.parse(tool.input);
       if (!textBlock || !("text" in textBlock) || typeof textBlock.text !== "string") {
         throw new Error("Bedrock response did not contain text");
       }

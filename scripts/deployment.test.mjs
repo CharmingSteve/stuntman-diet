@@ -65,13 +65,19 @@ writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));
 console.log(JSON.stringify(result));
 `;
 const preload = `
-globalThis.fetch = async url => {
+globalThis.fetch = async (url, options) => {
  const path = new URL(url).pathname;
  let status=200;
  let body={};
  if(path==="/api/history") status=401;
  else if(path==="/oauth2/token") body={access_token:"synthetic-token"};
- else if(path==="/api/chat") body={intent:"food_log",summary:"synthetic",items:[{calories:200}]};
+ else if(path==="/api/chat") {
+   if(!/^[A-Za-z0-9:_-]{8,120}$/.test(options?.headers?.["Idempotency-Key"] ?? ""))
+     return new Response(JSON.stringify({error:"Missing idempotency key"}),{status:400});
+   if(JSON.parse(options.body).client_time !== "2025-01-05T12:00:00+02:00")
+     throw new Error("Smoke chat must use the tracked synthetic Sunday");
+   body={intent:"food_log",summary:"synthetic",items:[{calories:200}]};
+ }
  else if(path.endsWith("/environments/production")) body={
    protection_rules:process.env.TEST_NO_APPROVAL ? [] : [{type:"required_reviewers",reviewers:[{type:"User",id:1}]}],
    deployment_branch_policy:{custom_branch_policies:true}};
