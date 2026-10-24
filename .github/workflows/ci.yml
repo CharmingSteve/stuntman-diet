@@ -23,6 +23,14 @@ jobs:
   verify-and-package:
     name: Verify tests and package Linux release
     runs-on: ubuntu-latest
+    services:
+      dynamodb:
+        image: amazon/dynamodb-local:3.1.0@sha256:7ef4a2c45b58c2901e70a4f28e0953a422c2c631baaaf5e2c15e0805740c7752
+        ports:
+          - 127.0.0.1:8000:8000
+    env:
+      DYNAMODB_ENDPOINT: http://127.0.0.1:8000
+      AWS_REGION: us-east-1
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
@@ -37,6 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
+          node scripts/wait-dynamo.mjs
           npm test
           npm run build
           npm run package

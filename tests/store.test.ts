@@ -12,6 +12,9 @@ import { SQLiteStore } from "../src/store-sqlite.js";
 import { allItems, StoreConflict, type Store, type StoreItem, type StoreWrite } from "../src/store.js";
 
 const endpoint = process.env.DYNAMODB_ENDPOINT;
+if ((process.env.CI === "true" || process.env.CI === "1") && !endpoint) {
+  throw new Error("CI requires DYNAMODB_ENDPOINT so both SQLite and DynamoDB Local store contracts execute.");
+}
 const backends = ["sqlite", ...(endpoint ? ["dynamo"] : [])];
 
 describe.each(backends)("store contract: %s", (backend) => {

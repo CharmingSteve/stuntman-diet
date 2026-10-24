@@ -141,3 +141,9 @@ test("production promotion only follows main push or explicitly requested main d
   assert.match(production, /environment: production/);
   assert.match(production, /node scripts\/verify-production-gate\.mjs/);
 });
+test("DynamoDB readiness only permits loopback endpoints", () => fixture(execute => {
+  for (const endpoint of ["https://127.0.0.1:8000", "http://user:pass@localhost:8000",
+    "http://example.com:8000", "http://localhost:8000/path", "http://localhost:8000?x=1"]) {
+    assert.notEqual(execute("wait-dynamo.mjs", [], { DYNAMODB_ENDPOINT: endpoint }).status, 0);
+  }
+}));
