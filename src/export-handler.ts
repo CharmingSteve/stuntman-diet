@@ -43,7 +43,7 @@ async function checkedManifest(bucket: string, key: string): Promise<string> {
   const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   if (!result.Body) throw new Error("Missing export manifest");
   const body = await result.Body.transformToString();
-  const checksum = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key.replace(/\.json$/, ".checksum") }));
+  const checksum = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key.replace(/\.json$/, ".md5") }));
   if (!checksum.Body) throw new Error("Missing manifest checksum");
   const expected = (await checksum.Body.transformToString()).trim().replaceAll('"', "");
   const md5 = createHash("md5").update(body);

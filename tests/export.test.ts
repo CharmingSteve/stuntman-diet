@@ -33,7 +33,7 @@ function manifests(arn = "arn:export:one") {
   aws.s3.mockImplementation(async (command: { constructor: { name: string }; input: { Key: string } }) => {
     if (command.constructor.name === "HeadObjectCommand") return { ContentLength: 100, ETag: '"multipart-2"' };
     const content = command.input.Key.includes("manifest-summary") ? summary : files;
-    return { Body: { transformToString: async () => command.input.Key.endsWith(".checksum") ? createHash("md5").update(content).digest("base64") : content } };
+    return { Body: { transformToString: async () => command.input.Key.endsWith(".md5") ? createHash("md5").update(content).digest("base64") : content } };
   });
   return `${prefix}manifest-summary.json`;
 }
