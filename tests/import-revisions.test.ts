@@ -41,6 +41,30 @@ function isRevision(writes: StoreWrite[]) {
 }
 
 describe("durable browser daily-table revisions", () => {
+  it.each(["include", "skip"] as const)("does not mark a failed source day complete and preserves explicit %s decisions", async (action) => {
+    const valid = {
+      id: "valid", kind: "meal", display_name: "Eggs", calories: 100,
+      timestamp: `${day}T12:00:00Z`, timezone: "Asia/Jerusalem", source_reference: "valid-group"
+    };
+    const preview = await previewImport(store, "u", { sources: [{
+      conversation_id: "partial-import", messages: [
+        valid, { ...valid, id: "invalid", calories: undefined, source_reference: "invalid-group" }
+      ]
+    }] });
+    const records = preview.records as RecordRow[], id = String(preview.job_id);
+    await reviewImport(store, "u", id, {
+      resolutions: records.map((r, index) => ({ source_id: r.source_id, action: index === 0 ? "include" : action })),
+      complete_days: [day]
+    });
+    expect(await finish(id)).toMatchObject({
+      inserted: 1, failed: action === "include" ? 1 : 0, skipped: action === "skip" ? 1 : 0
+    });
+    expect((await history(store, "u", day, day))[0]).toMatchObject({
+      completeness: action === "include" ? "partial" : "complete"
+    });
+    expect(await active()).toHaveLength(1);
+  });
+
   it("replaces earlier tables atomically, including unchanged rows, without touching manual/canonical meals or another day", async () => {
     const canonical = await previewImport(store, "u", { sources: [{ conversation_id: "independent", messages: [{
       id: "meal", kind: "meal", display_name: "Canonical", calories: 10,
@@ -118,7 +142,9 @@ describe("durable browser daily-table revisions", () => {
     const before = await allItems(store, pk, { prefix: `DAY#${day}#` });
     expect(await finish(await prepared(body, nextDay))).toMatchObject({ failed: 2, inserted: 0 });
     expect(await finish(await prepared(browser("original", 10, [["Eggs", 999]])))).toMatchObject({ failed: 2, inserted: 0 });
-    expect(await allItems(store, pk, { prefix: `DAY#${day}#` })).toEqual(before);
+    expect((await allItems(store, pk, { prefix: `DAY#${day}#` })).filter((r) => r.entity === "entry"))
+      .toEqual(before.filter((r) => r.entity === "entry"));
+    expect((await history(store, "u", day, day))[0]?.completeness).toBe("partial");
     expect(await active(nextDay)).toHaveLength(0);
   });
 

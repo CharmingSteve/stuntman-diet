@@ -165,3 +165,12 @@ test("production gate can read environment protection and prompt objects are rev
   assert.ok(template.includes("arn:${AWS::Partition}:s3:::${CodeBucket}/${SystemPromptKey}"));
   assert.ok(!deploy.includes("/prompts/stuntman-diet-system-prompt.md"));
 });
+test("Glue table uses an inert empty root and snapshot partitions select export data only", () => {
+  const template = readFileSync(join(root, "infra/template.yaml"), "utf8");
+  const table = template.split("  GlueTable:")[1].split("  AthenaWorkgroup:")[0];
+  assert.match(table, /Location: !Sub s3:\/\/\$\{PuddleBucket\}\/analytics-table-root\//);
+  assert.doesNotMatch(table, /Location:.*\/exports\//);
+  const smoke = readFileSync(join(root, "scripts/cloud-smoke.mjs"), "utf8");
+  assert.ok(smoke.includes('Location.endsWith("/data/")'));
+  assert.ok(smoke.includes('Scheduled export worker reported failure: ${typeof error === "string" ? error.slice(0, 500)'));
+});

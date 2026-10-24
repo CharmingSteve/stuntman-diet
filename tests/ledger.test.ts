@@ -151,6 +151,7 @@ describe("snapshot analytics", () => {
     expect(sql).toContain("FROM source WHERE entity='entry' AND d.status.s='active' GROUP BY 1");
     expect(sql).not.toContain("snapshot-one");
     expect(sql).toContain("d.accept_default_burn.bool=true");
+    expect(sql).toContain("SELECT cast(day AS date) day FROM bounds");
   });
   it("counts burn once and reports calendar gaps/excluded days instead of inventing deficits", async () => {
     const preview = await previewImport(store, "u", { sources: [{ conversation_id: "c", messages: [meal("1"), meal("2"), { id: "burn", timestamp: "2025-01-05T23:00:00+02:00", timezone: "Asia/Jerusalem", kind: "burn", total: 2000 }] }] });

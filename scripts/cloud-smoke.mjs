@@ -129,7 +129,10 @@ if (fixture) {
       const finished = await waitFor(() => {
         const row = get("SYSTEM#EXPORT", `JOB#${job}`);
         const status = row?.data.M.status.S;
-        assert.notEqual(status, "failed", "Scheduled export worker reported failure");
+        if (status === "failed") {
+          const error = row?.data.M.error?.S;
+          throw new Error(`Scheduled export worker reported failure: ${typeof error === "string" ? error.slice(0, 500) : "No structured job error"}`);
+        }
         return status === "complete" ? row : null;
       }, 1800, "scheduled worker publishes native export");
       const snapshot = finished.data.M.snapshot_id.S;
