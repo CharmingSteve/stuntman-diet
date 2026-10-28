@@ -321,8 +321,8 @@ async function refreshHistory() {
         : "No log — intake is unknown, not zero.");
     }
     addText(details, "p", day.burn === null
-      ? "Burn: unknown (2,000 kcal is only a proposal for tracked days)."
-      : `Burn: ${number(day.burn)} kcal · ${day.burn_source === "assumed" ? "assumed, explicitly accepted" : day.burn_source === "recorded" ? "recorded" : "provenance unknown"}.`);
+      ? "Burn: not applicable (not tracking)."
+      : `Burn: ${number(day.burn)} kcal · ${day.burn_source === "assumed" ? "assumed default (no burn written)" : day.burn_source === "recorded" ? "recorded" : "provenance unknown"}.`);
     const canShowNet = eligible && day.completeness === "complete" && day.burn !== null && ["recorded", "assumed"].includes(day.burn_source);
     addText(details, "p", `Whole-day net (intake − burn): ${canShowNet && day.net !== null ? `${number(day.net)} kcal` : "Unknown / not eligible"}.`);
     dayControls(details, day);

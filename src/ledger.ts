@@ -86,9 +86,17 @@ export async function dayState(store: Store, user: string, day: string, p: Profi
   const old = await store.get(userPK(user), `DAY#${day}#META`);
   return { ...(old ? { old } : {}), data: old ? daySchema.parse(old.data) : newDay(day, p) };
 }
+// Tracked days without a written burn assume this default (labelled "assumed").
+export const defaultBurn = 2000;
+export function effectiveBurn(d: Day): { total: number; source: "recorded" | "assumed" } | null {
+  if (d.eligibility !== "tracked") return null;
+  if (d.burn_total !== null) return { total: d.burn_total, source: d.burn_source === "recorded" ? "recorded" : "assumed" };
+  return { total: defaultBurn, source: "assumed" };
+}
+// Net is only computed for complete tracked days; it uses the effective burn.
 export function usableBurn(d: Day): number | null {
-  return d.eligibility === "tracked" && d.completeness === "complete" &&
-    (d.burn_source === "recorded" || d.accept_default_burn) ? d.burn_total : null;
+  const burn = effectiveBurn(d);
+  return burn && d.completeness === "complete" ? burn.total : null;
 }
 export function dateRange(from?: string, to?: string): { from: string; to: string } {
   const start = dateSchema.parse(from ?? "1900-01-01");
@@ -115,7 +123,8 @@ export async function history(store: Store, user: string, from?: string, to?: st
     const d = days.get(day) ?? newDay(day, p);
     const rows = entries.filter((e) => e.day_key === day).sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
     const burn = usableBurn(d);
-    return { day, timezone: d.timezone, burn: d.burn_total, burn_source: d.burn_source, eligibility: d.eligibility, completeness: d.completeness, entries: rows, net: burn === null ? null : rows.reduce((n, e) => n + e.calories, 0) - burn };
+    const effective = effectiveBurn(d);
+    return { day, timezone: d.timezone, burn: effective?.total ?? null, burn_source: effective?.source ?? null, eligibility: d.eligibility, completeness: d.completeness, entries: rows, net: burn === null ? null : rows.reduce((n, e) => n + e.calories, 0) - burn };
   });
 }
 export async function replay(store: Store, user: string, key: string, payload: unknown): Promise<Record<string, unknown> | undefined> {

@@ -2,18 +2,36 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import { allItems } from "./store.js";
-import { mutate, userPK, profile, dayState, write, entrySchema, metricSchema, dayItems, usableBurn, InputError } from "./ledger.js";
+import { mutate, userPK, profile, dayState, write, entrySchema, metricSchema, dayItems, usableBurn, effectiveBurn, InputError } from "./ledger.js";
 import { resolveRequestTime } from "./time.js";
 import { parseMessage, narrateFacts, type FoodImage } from "./llm.js";
 import { parseBurnText } from "./parsing.js";
 import { resolveCatalog } from "./resolver.js";
 import { renderDailySummary, isEndOfDay } from "./renderer.js";
 import { startTrends } from "./analytics.js";
+import { applyFix, parseFixCommand } from "./fixes.js";
 import type { FoodRecord } from "./types.js";
 
 export const chatSchema = z.object({ text: z.string().trim().min(1).max(4000), client_time: z.string().optional() }).strict();
+
+// Burn text is never food. A model that echoes "burned 1430 + 1550" as a 2,980 kcal
+// item is what put burn into intake, so such items are dropped before any write.
+export function looksLikeBurn(item: { raw: string; display_name: string }): boolean {
+  const text = `${item.raw} ${item.display_name}`;
+  return /\bburn(?:ed)?\b/i.test(text) || /\d{3,5}\s*\+\s*\d{3,5}/.test(text);
+}
+
 export async function chat(store: Store, user: string, key: string, body: unknown, foods: FoodRecord[], image?: FoodImage, imageKey: string | null = null, imageHash?: string): Promise<Record<string, unknown>> {
   const input = chatSchema.parse(body);
+  const fix = parseFixCommand(input.text);
+  if (fix) {
+    // Fix commands are deterministic: no LLM call, and a bad command is refused.
+    return mutate(store, user, key, { ...input, image_hash: imageHash ?? null }, async () => {
+      if ("error" in fix) throw new InputError(fix.error);
+      const p = await profile(store, user), time = resolveRequestTime(input.client_time, p.timezone);
+      return applyFix(store, user, fix.command, p, time.dayKey);
+    });
+  }
   return mutate(store, user, key, { ...input, image_hash: imageHash ?? null }, async () => {
     const p = await profile(store, user), time = resolveRequestTime(input.client_time, p.timezone);
     const state = await dayState(store, user, time.dayKey, p);
@@ -22,6 +40,11 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const parsed = await parseMessage(input.text, foods, time.original, p.timezone, image);
     const deterministicBurn = parseBurnText(input.text);
     if (deterministicBurn) { parsed.burn = deterministicBurn; parsed.intent = "burn"; }
+    const burnItems = parsed.items.filter(looksLikeBurn);
+    parsed.items = parsed.items.filter((item) => !looksLikeBurn(item));
+    const burnNote = burnItems.length
+      ? `Not recorded as food: ${burnItems.map((item) => `"${item.raw}"`).join(", ")}. Burn is recorded from its total; repair a wrong entry with "fix <time> delete".`
+      : "";
     const yesterday = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
     const recentFrom = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 29 * 86400000).toISOString().slice(0, 10);
     const recentItems = parsed.items.some((i) => i.match_stage === "recent_log") || parsed.intent === "question"
@@ -88,8 +111,8 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const summary = parsed.intent === "question" ? null :
       state.data.eligibility === "untracked" ? "Not tracking today." :
       state.data.completeness === "missing" && !entries.length ? "No log for this date. No daily intake or deficit is inferred." :
-      `${renderDailySummary(entries, usableBurn(state.data), time.original, state.data.timezone, isEndOfDay(time.original, state.data.timezone), active.length === 0)}\n\n${state.data.completeness === "complete" ? "Complete" : "Partial log; confirm day complete in History before calculating a daily deficit."}${state.data.burn_total !== null ? ` Burn ${state.data.burn_total} kcal (${state.data.burn_source}).` : ""}`;
-    const message = [correctionMessage, needs.join(" "), answer, summary, parsed.notes].filter(Boolean).join("\n\n");
+      `${renderDailySummary(entries, effectiveBurn(state.data)?.total ?? null, time.original, state.data.timezone, isEndOfDay(time.original, state.data.timezone), active.length === 0, effectiveBurn(state.data)?.source)}\n\n${state.data.completeness === "complete" ? "Complete" : "Partial log; confirm day complete in History before calculating a daily deficit."}`;
+    const message = [correctionMessage, needs.join(" "), answer, summary, burnNote, parsed.notes].filter(Boolean).join("\n\n");
     return { writes, result: { intent: parsed.intent, items: resolved, needs_clarification: needs, correction: correctionMessage, message, summary, question: parsed.question } };
   });
 }
