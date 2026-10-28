@@ -27,7 +27,9 @@ describe("ledger policies and idempotency", () => {
     expect(days).toHaveLength(30);
     expect(days[0]?.day).toBe("2026-10-25");
     expect(days[29]?.day).toBe("2026-09-26");
-    expect(days.every((d) => d.net === null && d.burn === null && d.completeness === "missing")).toBe(true);
+    expect(days.every((d) => d.net === null && d.completeness === "missing")).toBe(true);
+    expect(days.filter((d) => d.eligibility === "tracked").every((d) => d.burn === 2000 && d.burn_source === "assumed")).toBe(true);
+    expect(days.filter((d) => d.eligibility === "untracked").every((d) => d.burn === null)).toBe(true);
     expect(days.find((d) => d.day === "2026-10-23")?.eligibility).toBe("untracked");
     expect(eligible("2026-10-25", profileSchema.parse({ holidays: ["2026-10-25"] }))).toBe(false);
   });
@@ -150,7 +152,7 @@ describe("snapshot analytics", () => {
     expect(sql).toContain("item.pk.s='USER#u'' OR true --'");
     expect(sql).toContain("FROM source WHERE entity='entry' AND d.status.s='active' GROUP BY 1");
     expect(sql).not.toContain("snapshot-one");
-    expect(sql).toContain("d.accept_default_burn.bool=true");
+    expect(sql).toContain("coalesce(cast(d.burn_total.n AS double), 2000)");
     expect(sql).toContain("SELECT cast(day AS date) day FROM bounds");
   });
   it("counts burn once and reports calendar gaps/excluded days instead of inventing deficits", async () => {

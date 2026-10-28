@@ -15,7 +15,8 @@ export function renderDailySummary(
   timestamp: string,
   timezone: string,
   endOfDay = false,
-  showFullDate = true
+  showFullDate = true,
+  burnSource?: "recorded" | "assumed"
 ): string {
   const formatter = new Intl.DateTimeFormat("en-IL", {
     timeZone: timezone,
@@ -33,7 +34,7 @@ export function renderDailySummary(
     ...(rows.length ? rows : ["| No foods logged | 0 |"]),
     "",
     `**Total Intake:** ${Math.round(total)} kcal`,
-    `**Calories Burned:** ${burn === null ? "Not set" : `${Math.round(burn)} kcal`}`,
+    `**Calories Burned:** ${burn === null ? "Not set" : `${Math.round(burn)} kcal${burnSource === "assumed" ? " (assumed)" : ""}`}`,
     `**Net Calories:** ${burn === null ? "Not available" : `${Math.round(total - burn)} kcal`}`
   ].join("\n");
 }

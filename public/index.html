@@ -43,6 +43,21 @@
               <button type="submit">Log entry</button>
             </div>
           </form>
+          <details class="fix-help">
+            <summary>Fix a wrong entry (type it in the box above)</summary>
+            <p class="hint">Fixes are exact commands. They never call the food model. Times use your profile timezone. Add a date (YYYY-MM-DD) to fix another day. If several entries share that minute, add a word from the name.</p>
+            <pre class="response">fix 10:44 PM delete
+fix 22:44 burn 1430 + 1550
+fix 10:44 PM burn
+fix 10:41 PM calories 150
+fix 2026-10-27 22:44 delete
+fix 11:41 AM crackers delete</pre>
+            <ul class="hint">
+              <li><strong>delete</strong> removes the entry from intake (kept in history as void).</li>
+              <li><strong>burn</strong> moves that entry's calories into the day's burn. Add components to set them, for example <code>burn 1430 + 1550</code>.</li>
+              <li><strong>calories N</strong> corrects the entry to N kcal (the old one is kept as superseded).</li>
+            </ul>
+          </details>
           <p id="log-status" class="status" role="status" aria-live="polite"></p>
           <pre id="response" class="response hidden"></pre>
         </section>

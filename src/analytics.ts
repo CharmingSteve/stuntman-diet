@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, StopQueryExecutionCommand } from "@aws-sdk/client-athena";
 import { z } from "zod";
 import type { Store } from "./store.js";
-import { write, userPK, dateRange, dayItems, daySchema, entrySchema, metricSchema, profile, newDay, usableBurn, InputError } from "./ledger.js";
+import { write, userPK, dateRange, dayItems, daySchema, entrySchema, metricSchema, profile, newDay, usableBurn, effectiveBurn, defaultBurn, InputError } from "./ledger.js";
 import { exportPK, snapshotSchema, config, requestExport } from "./export-handler.js";
 import { dayKeyFor } from "./time.js";
 
@@ -37,10 +37,10 @@ export function analyticsSQL(database: string, table: string, snapshot: string, 
         contains(coalesce(transform(p.p.holidays.l,x->x.s),ARRAY[]),cast(c.day AS varchar))
         OR contains(coalesce(transform(p.p.non_tracking_weekdays.l,x->cast(x.n AS integer)),ARRAY[5,6]),mod(day_of_week(c.day),7))
         THEN 'untracked' ELSE 'tracked' END) eligibility,
-      coalesce(d.completeness.s,'missing') completeness, d.burn_source.s burn_source,
+      coalesce(d.completeness.s,'missing') completeness,
+      CASE WHEN d.burn_total.n IS NULL THEN 'assumed' ELSE d.burn_source.s END burn_source,
       CASE WHEN d.eligibility.s='tracked' AND d.completeness.s='complete'
-        AND (d.burn_source.s='recorded' OR d.accept_default_burn.bool=true)
-        THEN cast(d.burn_total.n AS double) END burn
+        THEN coalesce(cast(d.burn_total.n AS double), ${defaultBurn}) END burn
     FROM calendar c CROSS JOIN policy p
     LEFT JOIN (SELECT d FROM source WHERE entity='day') metadata ON metadata.d.day_key.s=cast(c.day AS varchar)
     LEFT JOIN meals m ON cast(c.day AS varchar)=m.day
@@ -186,7 +186,7 @@ export async function localTrends(store: Store, user: string, from?: string, to?
         partial: group.filter((d) => d.eligibility === "tracked" && d.completeness === "partial").length,
         missing: group.filter((d) => d.eligibility === "tracked" && d.completeness === "missing").length,
         excluded: group.filter((d) => d.eligibility === "untracked").length,
-        assumed: usable.filter((d) => d.burn_source === "assumed").length });
+        assumed: usable.filter((d) => effectiveBurn(d)?.source === "assumed").length });
     }
   }
   for (const food of new Set(entries.map((e) => e.display_name))) {
