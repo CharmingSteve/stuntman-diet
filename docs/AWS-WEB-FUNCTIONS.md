@@ -49,8 +49,9 @@ and IAM object-read grant select that exact key. Staging cannot change a
 running production revision's prompt by overwriting a shared prompt path.
 `infra/template.yaml` creates:
 
-- An on-demand DynamoDB table (`PK`, `SK` string keys) with KMS customer-managed
-  encryption, PITR, deletion protection, and retention on stack deletion.
+- An on-demand DynamoDB table (`PK`, `SK` string keys) encrypted with an
+  AWS-owned key (no per-request KMS calls), PITR, deletion protection, and
+  retention on stack deletion.
 - A private, encrypted, versioned, retained puddle bucket. Only prefixes have
   lifecycle expiration: `exports/` current objects 90 days, noncurrent 30;
   `results/` current/noncurrent objects 7 days; `images/` current objects are
@@ -67,8 +68,8 @@ running production revision's prompt by overwriting a shared prompt path.
   Its role has table job CRUD/queries, PITR description, native full export,
   export status, export objects/manifests, and Glue partition registration.
   It has no Bedrock or Athena query permissions.
-- EventBridge Scheduler every minute with input `{}` processes pending and
-  running jobs. A second schedule runs at **03:00 Asia/Jerusalem** with
+- EventBridge Scheduler every 7 minutes with input `{}` processes the single
+  job named by the `SYSTEM#EXPORT` / `ACTIVE` pointer, if any. A second schedule runs at **03:00 Asia/Jerusalem** with
   `{"nightly":true}` to initiate nightly exports. Scheduler's role can invoke
   only that worker. Lambda async failures go to an encrypted 14-day SQS DLQ.
 - Separate 30-day KMS-encrypted app centralized, app `.local`, and worker log

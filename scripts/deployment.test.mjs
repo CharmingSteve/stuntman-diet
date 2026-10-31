@@ -114,7 +114,9 @@ test("cloud smoke retains three HTTP checks and two independently scoped export 
   assert.equal(result.status, 0, result.stderr);
   assert.equal((result.stdout.match(/PASS/g) ?? []).length, 5);
   assert.ok(!result.stdout.includes("synthetic-secret") && !result.stdout.includes("synthetic-token"));
-  assert.equal(state().puts.length, 6);
+  assert.equal(state().puts.length, 8);
+  // Each export job must also activate the pointer, or the worker never processes it.
+  assert.equal(state().puts.filter(item => item.entity.S === "export_active").length, 2);
   assert.equal(state().queries.length, 4);
   assert.equal(state().deletes.length, 4);
 }));
@@ -173,4 +175,17 @@ test("Glue table uses an inert empty root and snapshot partitions select export 
   const smoke = readFileSync(join(root, "scripts/cloud-smoke.mjs"), "utf8");
   assert.ok(smoke.includes('Location.endsWith("/data/")'));
   assert.ok(smoke.includes('Scheduled export worker reported failure: ${typeof error === "string" ? error.slice(0, 500)'));
+});
+test("DynamoDB uses an AWS-owned key and no role keeps a grant to the retired customer key", () => {
+  const template = readFileSync(join(root, "infra/template.yaml"), "utf8");
+  const table = template.split("  DietTable:")[1].split("  PuddleBucket:")[0];
+  assert.match(table, /SSESpecification:\n\s+SSEEnabled: false/);
+  assert.doesNotMatch(table, /KMSMasterKeyId|SSEType: KMS/);
+  assert.doesNotMatch(template, /\bDataKey\b/);
+  assert.doesNotMatch(template, /KmsKeyArn:/);
+});
+test("export poll stays at seven minutes so idle polls cost one pointer read", () => {
+  const template = readFileSync(join(root, "infra/template.yaml"), "utf8");
+  const poll = template.split("  ExportPollSchedule:")[1].split("  NightlyExportSchedule:")[0];
+  assert.match(poll, /ScheduleExpression: rate\(7 minutes\)/);
 });
