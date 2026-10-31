@@ -124,8 +124,13 @@ if (fixture) {
     const snapshots = [];
     for (let index = 0; index < 2; index++) {
       const job = randomUUID();
+      // The worker only processes the job named by the active pointer. Refuse to take over a live export.
+      const pointer = get("SYSTEM#EXPORT", "ACTIVE");
+      assert.ok(!pointer?.data.M.job_id?.S, "Export pointer is busy; a live job would be stranded");
       put({ PK: "SYSTEM#EXPORT", SK: `JOB#${job}`, entity: "export_job", version: 1,
         data: { job_id: job, status: "pending", requested_at: new Date().toISOString() } });
+      aws("dynamodb", "put-item", "--table-name", deployed.TableName, "--item",
+        JSON.stringify(marshal({ PK: "SYSTEM#EXPORT", SK: "ACTIVE", entity: "export_active", version: 1, data: { job_id: job } }).M));
       const finished = await waitFor(() => {
         const row = get("SYSTEM#EXPORT", `JOB#${job}`);
         const status = row?.data.M.status.S;

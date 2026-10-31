@@ -28,13 +28,6 @@ Parameters:
     Default: amazon.nova-lite-v1:0
     AllowedValues: [amazon.nova-lite-v1:0]
 Resources:
-  DataKey:
-    Type: AWS::KMS::Key
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Description: DynamoDB and worker configuration encryption.
-      EnableKeyRotation: true
   LogKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
@@ -78,10 +71,9 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+      # AWS-owned key: DynamoDB encrypts at rest without per-request KMS calls or key fees.
       SSESpecification:
-        SSEEnabled: true
-        SSEType: KMS
-        KMSMasterKeyId: !Ref DataKey
+        SSEEnabled: false
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       DeletionProtectionEnabled: true
@@ -232,12 +224,6 @@ Resources:
                 Action: [athena:StartQueryExecution, athena:GetQueryExecution, athena:GetQueryResults, athena:StopQueryExecution]
                 Resource: !Sub arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkgroup}
               - Effect: Allow
-                Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
-                Resource: !GetAtt DataKey.Arn
-                Condition:
-                  StringEquals:
-                    kms:ViaService: !Sub dynamodb.${AWS::Region}.amazonaws.com
-              - Effect: Allow
                 Action: [glue:GetDatabase, glue:GetTable, glue:GetPartitions, glue:GetPartition]
                 Resource:
                   - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
@@ -268,9 +254,6 @@ Resources:
                 Action: dynamodb:DescribeExport
                 Resource: !Sub ${DietTable.Arn}/export/*
               - Effect: Allow
-                Action: [kms:Decrypt, kms:DescribeKey, kms:GenerateDataKey]
-                Resource: !GetAtt DataKey.Arn
-              - Effect: Allow
                 Action: sqs:SendMessage
                 Resource: !GetAtt WorkerDeadLetters.Arn
               - Effect: Allow
@@ -294,7 +277,6 @@ Resources:
       Timeout: 120
       MemorySize: 256
       ReservedConcurrentExecutions: 1
-      KmsKeyArn: !GetAtt DataKey.Arn
       DeadLetterConfig:
         TargetArn: !GetAtt WorkerDeadLetters.Arn
       Code:
@@ -339,7 +321,7 @@ Resources:
   ExportPollSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      ScheduleExpression: rate(1 minute)
+      ScheduleExpression: rate(7 minutes)
       FlexibleTimeWindow:
         Mode: "OFF"
       Target:

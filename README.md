@@ -390,8 +390,10 @@ summary total that disagrees with the ledger leaves the day `partial`.
 - **Snapshot source:** a native DynamoDB full export at the table's
   `LatestRestorableDateTime` (PITR). That time can lag the current clock.
 - **Refresh analytics data** calls `POST /api/analytics/refresh`. It creates one
-  export per 5-minute slot, or reuses a pending one. The export worker polls
-  every minute, validates the manifest, checksums, and ETags, registers a Glue
+  export per 5-minute slot, or reuses the one pending or running export. That
+  export is named by the `SYSTEM#EXPORT` / `ACTIVE` pointer, so the worker
+  reads one pointer item each poll instead of scanning job history. The export
+  worker polls every 7 minutes, validates the manifest, checksums, and ETags, registers a Glue
   partition for the data directory only, then publishes `LATEST` only if the
   new snapshot is newer. If anything fails, the last good snapshot stays.
 - **Nightly export:** 03:00 Asia/Jerusalem.
@@ -459,14 +461,14 @@ is defined in `infra/auth.yaml`. Shared release storage is
 | Component | Resource | Notes |
 | --- | --- | --- |
 | **Web app Lambda** | `AWS::Lambda::WebFunction` (`stuntman-diet-<env>`) | Node 24 ZIP. Plain Hono server on `index.js` → `dist/server.js`. 60 s timeout. Up to 8 concurrent requests per environment, endpoint up to 2 environments. `ApplicationManaged` auth: the app checks Cognito JWTs itself. |
-| **Export worker Lambda** | `stuntman-diet-<env>-exports` | `dist/export-handler.handler`. 120 s timeout, 256 MB, reserved concurrency 1, failures to an encrypted SQS dead-letter queue (14 days). Triggered every minute (poll) and nightly at 03:00 Asia/Jerusalem by EventBridge Scheduler. |
-| **DynamoDB** | `DietTable` | On-demand, PK/SK strings, KMS encryption, PITR on, deletion protection on, retained on stack delete. |
+| **Export worker Lambda** | `stuntman-diet-<env>-exports` | `dist/export-handler.handler`. 120 s timeout, 256 MB, reserved concurrency 1, failures to an encrypted SQS dead-letter queue (14 days). Triggered every 7 minutes (poll) and nightly at 03:00 Asia/Jerusalem by EventBridge Scheduler. |
+| **DynamoDB** | `DietTable` | On-demand, PK/SK strings, AWS-owned key encryption (no KMS requests), PITR on, deletion protection on, retained on stack delete. |
 | **S3 "data puddle"** | `PuddleBucket` | Private, SSE-S3, versioned, retained, access-logged. Prefixes: `exports/` (current 90 days, noncurrent 30), `results/` (Athena output, 7 days), `images/` (food photos, noncurrent 90 days), `analytics-table-root/` (empty on purpose). |
 | **Glue / Athena** | Database `diet_<env>_<account>`, table `diet_items`, workgroup `stuntman-diet-<env>-trends` | Table location is the empty `analytics-table-root/`. Each snapshot is a partition at its own `data/` prefix. Workgroup enforces its configuration and a 100 MiB scan cap. |
 | **Bedrock** | `amazon.nova-lite-v1:0` | The app role may invoke only that model. |
 | **Cognito** | User pool per environment | Admin-created users only (no self-signup). Password ≥ 16 characters with MFA optional (TOTP). Advanced security enforced. Browser client uses authorization code + PKCE (no secret), with 15-minute access and ID tokens. Smoke client uses `client_credentials` with scope `diet-smoke/parse`, which only allows `POST /api/chat`. |
 | **Logs** | Log groups with 30-day retention, KMS-encrypted | `/aws/lambda/web/<stack>` and `.local`, plus `/aws/lambda/<stack>-exports`. |
-| **Keys** | KMS keys for DynamoDB and logs | Retained on stack delete. |
+| **Keys** | KMS keys for logs only | Retained on stack delete. DynamoDB uses an AWS-owned key. |
 | **Restore** | `infra/restore.yaml` | Imports one export's `data/` prefix into a new table. |
 
 Native DynamoDB exports write DynamoDB JSON. Athena reads them through an
