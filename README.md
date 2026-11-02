@@ -4,7 +4,7 @@ A private food and calorie journal. You type what you ate or burned in plain
 language (or attach a food photo) and the app keeps a per-day ledger, renders a
 table with totals and net calories, and reports weekly/monthly trends.
 
-The LLM (Amazon Bedrock, Nova Lite by default) only turns your message into
+The LLM (Amazon Bedrock, Nova 2 Lite by default; see [Changing the model](#changing-the-model)) only turns your message into
 structured JSON. The app does everything else: catalog lookup, calorie math,
 timestamps, day rules, idempotency, storage, and rendering.
 
@@ -97,7 +97,7 @@ npm run dev      # http://localhost:3000 (tsx watch)
   `aws cloudformation describe-stacks --profile click --region us-east-1 --stack-name stuntman-diet-staging-auth`.
 - **Bedrock** is called with your AWS credentials. Run with
   `AWS_PROFILE=click` and make sure the principal may call
-  `bedrock:InvokeModel` for `amazon.nova-lite-v1:0`.
+  `bedrock:InvokeModel` for the model in `BEDROCK_MODEL` (default `us.amazon.nova-2-lite-v1:0`).
 - `.env.example` defaults to `STORE=sqlite` and `TRENDS=sqlite`. Locally,
   reports are live and no snapshot is needed.
 - The system prompt file is read on every parse, so local prompt edits apply
@@ -270,7 +270,12 @@ entries.
 ### 4.3 Burn and health readings
 
 - **Burn:** type `1550 + 1200` (components) or `burned so far 3250` (total).
-  Sending a new burn replaces the old one. Burn is stored as `burn_source =
+  Without a date it goes to the day of the message. To record a burn for another
+  day, name the day: `yesterday burned 1642 + 1615`, `Nov 1 I burned 1642 + 1615`
+  (also `1 Nov`, `November 1st`), or `burned 1642 + 1615 on 2026-11-01`. A month and day
+  without a year mean the request's year, or the previous year if that date is still ahead. The day must be in the same clause as the burn ("today burned 1642 + 1615; same lunch as yesterday" is today). A message that names two different burn days is refused. The reply confirms the day and total.
+  The day must be tracked. A burn needs no food entry, so it can be set on a day
+  that has no log. Sending a new burn for a day replaces the old one. Burn is stored as `burn_source =
   recorded`. Clearing it needs a direct edit (section 4.5).
 - **Health readings** (glucose, blood pressure, weight) are created only through
   `POST /api/health-metrics` with an `Idempotency-Key`. The chat cannot create
@@ -465,7 +470,7 @@ is defined in `infra/auth.yaml`. Shared release storage is
 | **DynamoDB** | `DietTable` | On-demand, PK/SK strings, AWS-owned key encryption (no KMS requests), PITR on, deletion protection on, retained on stack delete. |
 | **S3 "data puddle"** | `PuddleBucket` | Private, SSE-S3, versioned, retained, access-logged. Prefixes: `exports/` (current 90 days, noncurrent 30), `results/` (Athena output, 7 days), `images/` (food photos, noncurrent 90 days), `analytics-table-root/` (empty on purpose). |
 | **Glue / Athena** | Database `diet_<env>_<account>`, table `diet_items`, workgroup `stuntman-diet-<env>-trends` | Table location is the empty `analytics-table-root/`. Each snapshot is a partition at its own `data/` prefix. Workgroup enforces its configuration and a 100 MiB scan cap. |
-| **Bedrock** | `amazon.nova-lite-v1:0` | The app role may invoke only that model. |
+| **Bedrock** | `BedrockModel` parameter (default `us.amazon.nova-2-lite-v1:0`) | The app role may invoke only that inference profile. The foundation models behind it are allowed only when the call comes through that profile (`bedrock:InferenceProfileArn` condition), since a geo profile routes across regions. |
 | **Cognito** | User pool per environment | Admin-created users only (no self-signup). Password ≥ 16 characters with MFA optional (TOTP). Advanced security enforced. Browser client uses authorization code + PKCE (no secret), with 15-minute access and ID tokens. Smoke client uses `client_credentials` with scope `diet-smoke/parse`, which only allows `POST /api/chat`. |
 | **Logs** | Log groups with 30-day retention, KMS-encrypted | `/aws/lambda/web/<stack>` and `.local`, plus `/aws/lambda/<stack>-exports`. |
 | **Keys** | KMS keys for logs only | Retained on stack delete. DynamoDB uses an AWS-owned key. |
@@ -609,7 +614,7 @@ origin, with `frame-ancestors 'none'`. API responses are `no-store`.
 | `COGNITO_DOMAIN` | blank | Hosted UI domain (login and logout) |
 | `COGNITO_REDIRECT_URI` | blank | Sent to the browser (defaults to the origin) |
 | `SMOKE_CLIENT_ID` | not set | Smoke client, limited to `POST /api/chat` |
-| `BEDROCK_MODEL` | `amazon.nova-lite-v1:0` | Model ID |
+| `BEDROCK_MODEL` | `us.amazon.nova-2-lite-v1:0` | **The single model setting.** Inference profile ID. Must equal `BedrockModel` in `infra/template.yaml`. See [Changing the model](#changing-the-model). |
 | `AWS_REGION` | `us-east-1` | All SDK clients |
 | `SYSTEM_PROMPT_PATH` | `./docs/stuntman-diet-system-prompt.md` | File path or `s3://bucket/key` |
 | `FOODS_PATH` | `./seeds/foods.json` | Catalog file |
@@ -622,10 +627,35 @@ origin, with `frame-ancestors 'none'`. API responses are `no-store`.
 | `GLUE_DATABASE`, `GLUE_TABLE` | blank | Snapshot partitions |
 | `TABLE_ARN` | blank | Worker's export call |
 
+Runtime policy: every Lambda uses `nodejs24.x`, the newest GA Node.js runtime on
+Lambda (Node 24 is supported on Lambda until April 2028). CI and `engines` also pin Node 24.
+`nodejs26.x` and `python3.15` were still public preview on Lambda when this was written,
+so they are not used in production. `scripts/deployment.test.mjs` fails if a template runtime
+or the CI Node version drifts from this policy. Develop on Node 24 (for example
+`brew install node@24`) so native modules such as `better-sqlite3` match production.
+
 The template sets `NODE_ENV=production`. `server.ts` reads
 `AWS_LAMBDA_HTTP_ENDPOINT` for its listen address when the runtime provides it.
 Do not set AWS credential variables on the Lambda: `check-deployment.mjs`
 rejects reserved runtime keys.
+
+### Changing the model
+
+The model is set in one variable, `BEDROCK_MODEL`. Nothing else in the code names a model.
+
+- **Deployed (AWS):** change the `BedrockModel` default in `infra/template.yaml`.
+  The Lambda's `BEDROCK_MODEL` and the IAM policy both follow it. Then deploy.
+- **Local:** set the same value as `BEDROCK_MODEL` in `.env`. `.env.example` mirrors
+  the deployed value, and a test fails if the two drift.
+
+Use a geo (`us.`, `eu.`, `jp.`) or `global.` inference profile ID, not a bare model ID.
+For example, Nova 2 Lite has no in-region us-east-1 endpoint, so it must be
+`us.amazon.nova-2-lite-v1:0`. Any model you pick must accept text plus image input
+and support the Converse API with tool use. Check on the model card that the
+profile is active in your account.
+
+Current choice: Nova 2 Lite (launched 2025-12-02, active, text, image, and video input,
+1M-token context). Nova 2 Pro is still preview, so it was not chosen.
 
 ## 15. Repository map
 

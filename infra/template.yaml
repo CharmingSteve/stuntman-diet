@@ -23,10 +23,12 @@ Parameters:
     Type: String
     Default: staging
     AllowedValues: [staging, production]
+  # THE model setting. Change only this value (and BEDROCK_MODEL in .env.example to match).
+  # Use a geo (us.*) or global.* inference profile ID. Nova 2 Lite has no in-region us-east-1 endpoint.
   BedrockModel:
     Type: String
-    Default: amazon.nova-lite-v1:0
-    AllowedValues: [amazon.nova-lite-v1:0]
+    Default: us.amazon.nova-2-lite-v1:0
+    AllowedPattern: "^(us|eu|jp|global)\\.[a-z0-9.-]+-v[0-9]+:[0-9]+$"
 Resources:
   LogKey:
     Type: AWS::KMS::Key
@@ -204,9 +206,18 @@ Resources:
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:BatchGetItem, dynamodb:ConditionCheckItem]
                 Resource: !GetAtt DietTable.Arn
+              # Follows BedrockModel. The app may call only this inference profile. The
+              # profile routes to foundation models in other regions, so those ARNs are
+              # region-wildcarded, but they are usable only when the call comes through this profile.
               - Effect: Allow
                 Action: bedrock:InvokeModel
-                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0
+                Resource: !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                Condition:
+                  StringLike:
+                    bedrock:InferenceProfileArn: !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
               - Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
                 Resource:
