@@ -796,6 +796,21 @@
       "source": "prompt_seed"
     },
     {
+      "id": "pargiot",
+      "name": "Boned Chicken Thigh / Pargiot (פרגיות)",
+      "aliases": [
+        "pargiot",
+        "boned chicken thigh"
+        "פרגיות"
+      ],
+      "category": "meat",
+      "basis": {
+        "type": "per_100g",
+        "calories_per_100g": 190
+      },
+      "source": "prompt_seed"
+    },
+    {
       "id": "salami",
       "name": "Salami/pepperoni (סלמי תה)",
       "aliases": [
