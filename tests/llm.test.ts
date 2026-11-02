@@ -6,7 +6,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", async (original) => {
 });
 import { parseMessage } from "../src/llm.js";
 const valid = { intent: "food_log", day_hint: null, items: [], burn: null, correction: null, question: null, needs_clarification: [], notes: "" };
-beforeEach(() => { send.mockReset(); });
+beforeEach(() => { send.mockReset(); vi.stubEnv("BEDROCK_MODEL", "us.amazon.nova-2-lite-v1:0"); });
 describe("Bedrock structured intent", () => {
   it("forces a full required-property tool contract instead of markdown text", async () => {
     send.mockResolvedValue({ output: { message: { content: [{ toolUse: { name: "record_food_intent", input: valid } }] } } });

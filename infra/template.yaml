@@ -23,10 +23,12 @@ Parameters:
     Type: String
     Default: staging
     AllowedValues: [staging, production]
+  # THE model setting. Change only this value (and BEDROCK_MODEL in .env.example to match).
+  # Use a geo (us.*) or global.* inference profile ID. Nova 2 Lite has no in-region us-east-1 endpoint.
   BedrockModel:
     Type: String
-    Default: amazon.nova-lite-v1:0
-    AllowedValues: [amazon.nova-lite-v1:0]
+    Default: us.amazon.nova-2-lite-v1:0
+    AllowedPattern: "^(us|eu|jp|global)\\.[a-z0-9.-]+-v[0-9]+:[0-9]+$"
 Resources:
   LogKey:
     Type: AWS::KMS::Key
@@ -206,7 +208,11 @@ Resources:
                 Resource: !GetAtt DietTable.Arn
               - Effect: Allow
                 Action: bedrock:InvokeModel
-                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0
+                # Follows BedrockModel. A geo/global profile routes to other regions, so the
+                # foundation-model ARN is region-wildcarded; the profile itself is account-scoped.
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
               - Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
                 Resource:

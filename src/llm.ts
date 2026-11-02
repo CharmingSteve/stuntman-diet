@@ -35,6 +35,15 @@ const responseSchema = z.object({
 export type ParsedMessage = z.infer<typeof responseSchema>;
 export type FoodImage = { mediaType: "jpeg" | "png" | "webp"; bytes: Uint8Array };
 
+// The one model setting. Deployed value: BedrockModel in infra/template.yaml; local: BEDROCK_MODEL in .env.
+// Nothing else in the code names a model. Nova 2 Lite has no in-region us-east-1 endpoint, so the
+// value is a geo inference profile (us.*) or the global profile (global.*), not the bare model ID.
+export function bedrockModel(): string {
+  const value = process.env.BEDROCK_MODEL?.trim();
+  if (!value) throw new Error("BEDROCK_MODEL is not set");
+  return value;
+}
+
 function promptPath(): string {
   return process.env.SYSTEM_PROMPT_PATH ?? "./docs/stuntman-diet-system-prompt.md";
 }
@@ -91,7 +100,7 @@ export async function parseMessage(
     }];
     if (image) content.push({ image: { format: image.mediaType, source: { bytes: image.bytes } } });
     const response = await client.send(new ConverseCommand({
-      modelId: process.env.BEDROCK_MODEL ?? "amazon.nova-lite-v1:0",
+      modelId: bedrockModel(),
       system: [{ text: `${system}\n\nReturn the complete result by calling record_food_intent. Include EVERY required property, using null or empty arrays where appropriate. Do not emit markdown or prose.` }],
       messages: [{
         role: "user",
@@ -121,7 +130,7 @@ export async function parseMessage(
 
 export async function narrateFacts(question: string, facts: Record<string, unknown>): Promise<string> {
   const response = await client.send(new ConverseCommand({
-    modelId: process.env.BEDROCK_MODEL ?? "amazon.nova-lite-v1:0",
+    modelId: bedrockModel(),
     system: [{
       text: "Answer the user's question using only the supplied pre-computed facts. Do not calculate totals, infer missing measurements, or claim a medical diagnosis. If the facts do not answer the question, say so briefly. Return exactly one JSON object with a single string property named answer."
     }],

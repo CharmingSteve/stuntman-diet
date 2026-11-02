@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import { allItems } from "./store.js";
-import { mutate, userPK, profile, dayState, write, entrySchema, metricSchema, dayItems, usableBurn, effectiveBurn, InputError } from "./ledger.js";
+import { mutate, userPK, profile, dayState, write, dateSchema, entrySchema, metricSchema, dayItems, usableBurn, effectiveBurn, InputError } from "./ledger.js";
 import { resolveRequestTime } from "./time.js";
 import { parseMessage, narrateFacts, type FoodImage } from "./llm.js";
 import { parseBurnText } from "./parsing.js";
@@ -38,14 +38,32 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const oldEntries = (await allItems(store, userPK(user), { prefix: `DAY#${time.dayKey}#ENTRY#` }));
     const active = oldEntries.map((e) => ({ row: e, entry: entrySchema.parse(e.data) })).filter((e) => e.entry.status === "active");
     const parsed = await parseMessage(input.text, foods, time.original, p.timezone, image);
+    const yesterday = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
     const deterministicBurn = parseBurnText(input.text);
-    if (deterministicBurn) { parsed.burn = deterministicBurn; parsed.intent = "burn"; }
+    // A burn names its day ("yesterday" or 2026-11-01); without one it belongs to the request's day.
+    let burnDayKey = time.dayKey;
+    if (deterministicBurn) {
+      if (deterministicBurn.day === "yesterday") burnDayKey = yesterday;
+      else if (deterministicBurn.day && /^\d{2}-\d{2}$/.test(deterministicBurn.day)) {
+        // Month and day only: same year as the request, or the previous year if that date is still ahead.
+        const year = Number(time.dayKey.slice(0, 4));
+        const candidate = `${year}-${deterministicBurn.day}`;
+        burnDayKey = candidate > time.dayKey ? `${year - 1}-${deterministicBurn.day}` : candidate;
+        if (!dateSchema.safeParse(burnDayKey).success) throw new InputError(`Invalid burn date ${deterministicBurn.day}. Use "Nov 1", YYYY-MM-DD, or "yesterday".`);
+      } else if (deterministicBurn.day) {
+        if (!dateSchema.safeParse(deterministicBurn.day).success) throw new InputError(`Invalid burn date ${deterministicBurn.day}. Use "Nov 1", YYYY-MM-DD, or "yesterday".`);
+        burnDayKey = deterministicBurn.day;
+      }
+      parsed.burn = { total: deterministicBurn.total, components: deterministicBurn.components };
+      parsed.intent = "burn";
+    }
+    const burnElsewhere = Boolean(deterministicBurn) && burnDayKey !== time.dayKey;
+    const burnState = burnElsewhere ? await dayState(store, user, burnDayKey, p) : state;
     const burnItems = parsed.items.filter(looksLikeBurn);
     parsed.items = parsed.items.filter((item) => !looksLikeBurn(item));
     const burnNote = burnItems.length
-      ? `Not recorded as food: ${burnItems.map((item) => `"${item.raw}"`).join(", ")}. Burn is recorded from its total; repair a wrong entry with "fix <time> delete".`
+      ? `Not logged as food: ${burnItems.map((item) => `"${item.raw}"`).join(", ")}.${deterministicBurn ? "" : " Burn is recorded from its total; repair a wrong entry with \"fix <time> delete\"."}`
       : "";
-    const yesterday = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
     const recentFrom = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 29 * 86400000).toISOString().slice(0, 10);
     const recentItems = parsed.items.some((i) => i.match_stage === "recent_log") || parsed.intent === "question"
       ? await dayItems(store, user, recentFrom, time.dayKey) : oldEntries;
@@ -56,8 +74,10 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const needs = [...(resolved.some((r) => r.matchStage !== "unresolved") ? [] : parsed.needs_clarification), ...resolved.filter((r) => r.matchStage === "unresolved").map((r) => `"${r.name}" could be options more than 50 kcal apart. Resend with the type or amount (for example "30g pure peanut butter") or your own calorie number.`)];
     const writes = [], entries = active.map((e) => e.entry);
     const recordable = resolved.filter((r) => r.matchStage !== "unresolved");
-    if ((recordable.length || parsed.burn || parsed.correction) && state.data.eligibility !== "tracked")
+    if ((recordable.length || parsed.correction) && state.data.eligibility !== "tracked")
       throw new InputError("Not tracking on this date. Explicitly enable tracking for this day before recording calories.");
+    if (parsed.burn && burnState.data.eligibility !== "tracked")
+      throw new InputError(`Not tracking on ${burnDayKey}. Set that day to tracked in History before recording burn.`);
     let correctionMessage: string | null = null;
     if (parsed.correction) {
       const c = parsed.correction;
@@ -87,10 +107,11 @@ export async function chat(store: Store, user: string, key: string, body: unknow
       writes.push(write(userPK(user), `DAY#${time.dayKey}#ENTRY#${entry.id}`, "entry", entry));
     }
     if (recordable.length || parsed.correction) state.data.completeness = "partial";
+    const burnTotal = parsed.burn ? (parsed.burn.components.length ? parsed.burn.components.reduce((a, b) => a + b, 0) : parsed.burn.total) : null;
     if (parsed.burn) {
-      state.data.burn_total = parsed.burn.components.length ? parsed.burn.components.reduce((a, b) => a + b, 0) : parsed.burn.total;
-      state.data.burn_source = "recorded";
-      state.data.burn_components = parsed.burn.components;
+      burnState.data.burn_total = burnTotal;
+      burnState.data.burn_source = "recorded";
+      burnState.data.burn_components = parsed.burn.components;
     }
     let answer: string | null = null;
     if (parsed.intent === "trend") {
@@ -107,12 +128,15 @@ export async function chat(store: Store, user: string, key: string, body: unknow
       });
       answer = await narrateFacts(parsed.question, { today: { intake, burn: usableBurn(state.data), completeness: state.data.completeness, eligibility: state.data.eligibility }, health });
     }
-    if (recordable.length || parsed.burn || parsed.correction) writes.push(write(userPK(user), `DAY#${time.dayKey}#META`, "day", state.data, state.old));
+    if (recordable.length || (parsed.burn && !burnElsewhere) || parsed.correction) writes.push(write(userPK(user), `DAY#${time.dayKey}#META`, "day", state.data, state.old));
+    if (burnElsewhere) writes.push(write(userPK(user), `DAY#${burnDayKey}#META`, "day", burnState.data, burnState.old));
+    const burnLine = burnElsewhere ? `Burn recorded for ${burnDayKey}: ${burnTotal} kcal${parsed.burn!.components.length ? ` (${parsed.burn!.components.join(" + ")})` : ""}. It replaces any earlier burn for that day.` : "";
     const summary = parsed.intent === "question" ? null :
+      burnElsewhere && !recordable.length && !parsed.correction ? null :
       state.data.eligibility === "untracked" ? "Not tracking today." :
       state.data.completeness === "missing" && !entries.length ? "No log for this date. No daily intake or deficit is inferred." :
       `${renderDailySummary(entries, effectiveBurn(state.data)?.total ?? null, time.original, state.data.timezone, isEndOfDay(time.original, state.data.timezone), active.length === 0, effectiveBurn(state.data)?.source)}\n\n${state.data.completeness === "complete" ? "Complete" : "Partial log; confirm day complete in History before calculating a daily deficit."}`;
-    const message = [correctionMessage, needs.join(" "), answer, summary, burnNote, parsed.notes].filter(Boolean).join("\n\n");
+    const message = [correctionMessage, needs.join(" "), answer, summary, burnLine, burnNote, parsed.notes].filter(Boolean).join("\n\n");
     return { writes, result: { intent: parsed.intent, items: resolved, needs_clarification: needs, correction: correctionMessage, message, summary, question: parsed.question } };
   });
 }

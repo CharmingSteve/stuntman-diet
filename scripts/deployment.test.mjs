@@ -189,3 +189,15 @@ test("export poll stays at seven minutes so idle polls cost one pointer read", (
   const poll = template.split("  ExportPollSchedule:")[1].split("  NightlyExportSchedule:")[0];
   assert.match(poll, /ScheduleExpression: rate\(7 minutes\)/);
 });
+
+test("every Lambda runtime is nodejs24.x (GA), matching CI and the engines pin", () => {
+  const template = readFileSync(resolve(root, "infra/template.yaml"), "utf8");
+  const runtimes = [...new Set([...template.matchAll(/Runtime:\s*([A-Za-z0-9.]+)/g)].map((match) => match[1]))];
+  assert.deepEqual(runtimes, ["nodejs24.x"], "Lambda runtimes must be the GA Node 24 runtime; nodejs26.x and python3.15 are preview on Lambda");
+  const ci = readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8");
+  const nodeVersions = [...ci.matchAll(/node-version:\s*"([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(nodeVersions.length >= 3);
+  assert.deepEqual([...new Set(nodeVersions)], ["24"]);
+  const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+  assert.equal(pkg.engines.node, ">=24 <25");
+});
