@@ -201,3 +201,12 @@ test("every Lambda runtime is nodejs24.x (GA), matching CI and the engines pin",
   const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
   assert.equal(pkg.engines.node, ">=24 <25");
 });
+
+test("existing stacks get the model from the template default, and Bedrock access is scoped to that profile", () => {
+  const deploy = readFileSync(join(root, "scripts/deploy.mjs"), "utf8");
+  assert.ok(deploy.includes("BedrockModel=${templateDefault(\"BedrockModel\")}"), "deploy must pass BedrockModel explicitly");
+  const template = readFileSync(join(root, "infra/template.yaml"), "utf8");
+  const wildcard = template.slice(template.indexOf("foundation-model/*"));
+  assert.match(template, /inference-profile\/\$\{BedrockModel\}/);
+  assert.match(wildcard.slice(0, 400), /Condition:\s+StringLike:\s+bedrock:InferenceProfileArn: !Sub arn:\$\{AWS::Partition\}:bedrock:\*:\$\{AWS::AccountId\}:inference-profile\/\$\{BedrockModel\}/);
+});

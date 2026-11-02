@@ -206,13 +206,18 @@ Resources:
               - Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:BatchGetItem, dynamodb:ConditionCheckItem]
                 Resource: !GetAtt DietTable.Arn
+              # Follows BedrockModel. The app may call only this inference profile. The
+              # profile routes to foundation models in other regions, so those ARNs are
+              # region-wildcarded, but they are usable only when the call comes through this profile.
               - Effect: Allow
                 Action: bedrock:InvokeModel
-                # Follows BedrockModel. A geo/global profile routes to other regions, so the
-                # foundation-model ARN is region-wildcarded; the profile itself is account-scoped.
-                Resource:
-                  - !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
-                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                Resource: !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                Condition:
+                  StringLike:
+                    bedrock:InferenceProfileArn: !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/${BedrockModel}
               - Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
                 Resource:

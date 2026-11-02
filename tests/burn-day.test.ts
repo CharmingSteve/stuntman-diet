@@ -5,7 +5,7 @@ import { SQLiteStore } from "../src/store-sqlite.js";
 import { type Store } from "../src/store.js";
 import { dayState, history, userPK, write } from "../src/ledger.js";
 import { chat } from "../src/chat.js";
-import { parseBurnText } from "../src/parsing.js";
+import { burnDayPhrases, parseBurnText } from "../src/parsing.js";
 
 const { parse } = vi.hoisted(() => ({ parse: vi.fn() }));
 vi.mock("../src/llm.js", () => ({ parseMessage: parse, narrateFacts: vi.fn().mockResolvedValue("n/a") }));
@@ -27,22 +27,26 @@ async function day(d: string) {
   return (await history(store, "u", d, d))[0]!;
 }
 
-describe("parseBurnText day", () => {
+describe("burn day phrases", () => {
   it.each([
-    ["yesterday burned 1642 + 1615", "yesterday"],
-    ["burned 1642 + 1615 on 2026-11-01", "2026-11-01"],
-    ["burned so far 3250 on 2026-11-01", "2026-11-01"],
-    ["Nov 1 I burned 1642 + 1615 calories", "11-01"],
-    ["November 1st burned 1642 + 1615", "11-01"],
-    ["1 Nov burned 1642 + 1615", "11-01"],
-    ["burned 1642 + 1615 on the 1st of november", "11-01"],
-    ["1550 + 1200", null]
-  ])("reads the day in %s", (text, expected) => {
-    expect(parseBurnText(text)?.day ?? null).toBe(expected);
+    ["yesterday burned 1642 + 1615", ["yesterday"]],
+    ["burned 1642 + 1615 on 2026-11-01", ["2026-11-01"]],
+    ["burned so far 3250 on 2026-11-01", ["2026-11-01"]],
+    ["Nov 1 I burned 1642 + 1615 calories", ["11-01"]],
+    ["November 1st burned 1642 + 1615", ["11-01"]],
+    ["1 Nov burned 1642 + 1615", ["11-01"]],
+    ["burned 1642 + 1615 on the 1st of november", ["11-01"]],
+    ["1550 + 1200", ["today"]]
+  ])("reads the burn day in %s", (text, expected) => {
+    expect(burnDayPhrases(text)).toEqual(expected);
+  });
+
+  it("ignores a day that appears in a clause without a burn", () => {
+    expect(burnDayPhrases("today burned 1642 + 1615; same lunch as yesterday")).toEqual(["today"]);
   });
 
   it("keeps the totals and components unchanged", () => {
-    expect(parseBurnText("yesterday burned 1642 + 1615")).toEqual({ total: 3257, components: [1642, 1615], day: "yesterday" });
+    expect(parseBurnText("yesterday burned 1642 + 1615")).toEqual({ total: 3257, components: [1642, 1615] });
   });
 });
 
@@ -72,6 +76,25 @@ describe("burn for another day", () => {
     expect((await day("2026-11-01")).burn).toBe(3257);
   });
 
+  it("a stray 'yesterday' in another clause does not move today's burn", async () => {
+    await say("today burned 1642 + 1615; same lunch as yesterday", "b9");
+    expect((await day("2026-11-02")).burn).toBe(3257);
+    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).toBeNull();
+  });
+
+  it("a burn the model reads still goes to the named day", async () => {
+    parse.mockResolvedValueOnce({ ...reply, intent: "burn", burn: { total: 3257, components: [] } });
+    await chat(store, "u", "b10", { text: "yesterday burned 3257 calories", client_time: MONDAY_MORNING }, []);
+    expect((await day("2026-11-01")).burn).toBe(3257);
+    expect((await day("2026-11-02")).burn_source).toBe("assumed");
+  });
+
+  it("two different burn days in one message are refused and write nothing", async () => {
+    await expect(say("yesterday burned 1642 + 1615 and burned 1000 on 2026-10-31", "b11")).rejects.toThrow(/more than one day/);
+    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).toBeNull();
+    expect((await dayState(store, "u", "2026-10-31", profile)).data.burn_source).toBeNull();
+  });
+
   it("a later burn for the same day replaces the earlier one", async () => {
     await say("yesterday burned 1642 + 1615", "b3");
     await say("yesterday burned 1600 + 1500", "b4");
@@ -82,7 +105,7 @@ describe("burn for another day", () => {
     const d = await dayState(store, "u", "2026-11-01", profile);
     await store.transact([write(pk, "DAY#2026-11-01#META", "day", { ...d.data, eligibility: "untracked" }, d.old)]);
     await expect(say("yesterday burned 1642 + 1615", "b5")).rejects.toThrow(/Not tracking on 2026-11-01/);
-    expect((await day("2026-11-01")).burn_source).toBeNull();
+    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).toBeNull();
   });
 
   it("refuses an invalid date instead of guessing", async () => {

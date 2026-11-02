@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
 const environment = process.argv[2];
@@ -13,6 +14,13 @@ function aws(...args) {
 function outputs(name) {
   return Object.fromEntries(JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", name,
     "--output", "json")).Stacks[0].Outputs.map(({ OutputKey, OutputValue }) => [OutputKey, OutputValue]));
+}
+// The single model setting lives in the template default; read it so the deploy never drifts from it.
+function templateDefault(parameter) {
+  const template = readFileSync("infra/template.yaml", "utf8");
+  const value = new RegExp(`\\n  ${parameter}:\\n(?:.*\\n){0,4}?    Default: (\\S+)`).exec(template)?.[1];
+  assert.ok(value, `${parameter} default not found in infra/template.yaml`);
+  return value;
 }
 function deploy(template, name, parameters = [], iam = false) {
   aws("cloudformation", "deploy", "--template-file", template, "--stack-name", name,
@@ -37,6 +45,8 @@ deploy("infra/template.yaml", stack, [
   `CodeBucket=${artifacts.ArtifactBucketName}`, `CodeKey=${key}`,
   `SystemPromptKey=${promptKey}`,
   `AccessLogsBucket=${artifacts.AccessLogsBucketName}`, `Environment=${environment}`,
+  // Passed explicitly: CloudFormation reuses the previous value on update when a parameter is omitted.
+  `BedrockModel=${templateDefault("BedrockModel")}`,
   ...["CognitoUserPool", "CognitoDomain", "CognitoClientId", "SmokeClientId"].map(k => `${k}=${authentication[k]}`)
 ], true);
 deploy("infra/auth.yaml", auth, [`CallbackUrl=${outputs(stack).WebFunctionUrl}/`]);

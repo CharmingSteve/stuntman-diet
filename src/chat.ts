@@ -5,7 +5,7 @@ import { allItems } from "./store.js";
 import { mutate, userPK, profile, dayState, write, dateSchema, entrySchema, metricSchema, dayItems, usableBurn, effectiveBurn, InputError } from "./ledger.js";
 import { resolveRequestTime } from "./time.js";
 import { parseMessage, narrateFacts, type FoodImage } from "./llm.js";
-import { parseBurnText } from "./parsing.js";
+import { burnDayPhrases, parseBurnText } from "./parsing.js";
 import { resolveCatalog } from "./resolver.js";
 import { renderDailySummary, isEndOfDay } from "./renderer.js";
 import { startTrends } from "./analytics.js";
@@ -40,24 +40,24 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const parsed = await parseMessage(input.text, foods, time.original, p.timezone, image);
     const yesterday = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
     const deterministicBurn = parseBurnText(input.text);
-    // A burn names its day ("yesterday" or 2026-11-01); without one it belongs to the request's day.
+    if (deterministicBurn) { parsed.burn = deterministicBurn; parsed.intent = "burn"; }
+    // The day comes from the burn's own clause, so it applies to a model-read burn too.
+    // Without a named day the burn belongs to the request's day.
+    const phrases = parsed.burn ? burnDayPhrases(input.text) : [];
+    if (phrases.length > 1) throw new InputError("This message names more than one day for a burn. Send one burn per day.");
+    const phrase = phrases[0] ?? "today";
     let burnDayKey = time.dayKey;
-    if (deterministicBurn) {
-      if (deterministicBurn.day === "yesterday") burnDayKey = yesterday;
-      else if (deterministicBurn.day && /^\d{2}-\d{2}$/.test(deterministicBurn.day)) {
-        // Month and day only: same year as the request, or the previous year if that date is still ahead.
-        const year = Number(time.dayKey.slice(0, 4));
-        const candidate = `${year}-${deterministicBurn.day}`;
-        burnDayKey = candidate > time.dayKey ? `${year - 1}-${deterministicBurn.day}` : candidate;
-        if (!dateSchema.safeParse(burnDayKey).success) throw new InputError(`Invalid burn date ${deterministicBurn.day}. Use "Nov 1", YYYY-MM-DD, or "yesterday".`);
-      } else if (deterministicBurn.day) {
-        if (!dateSchema.safeParse(deterministicBurn.day).success) throw new InputError(`Invalid burn date ${deterministicBurn.day}. Use "Nov 1", YYYY-MM-DD, or "yesterday".`);
-        burnDayKey = deterministicBurn.day;
-      }
-      parsed.burn = { total: deterministicBurn.total, components: deterministicBurn.components };
-      parsed.intent = "burn";
+    if (phrase === "yesterday") burnDayKey = yesterday;
+    else if (/^\d{2}-\d{2}$/.test(phrase)) {
+      // Month and day only: same year as the request, or the previous year if that date is still ahead.
+      const year = Number(time.dayKey.slice(0, 4));
+      const candidate = `${year}-${phrase}`;
+      burnDayKey = candidate > time.dayKey ? `${year - 1}-${phrase}` : candidate;
+    } else if (phrase !== "today") {
+      burnDayKey = phrase;
     }
-    const burnElsewhere = Boolean(deterministicBurn) && burnDayKey !== time.dayKey;
+    if (!dateSchema.safeParse(burnDayKey).success) throw new InputError(`Invalid burn date ${phrase}. Use "Nov 1", YYYY-MM-DD, or "yesterday".`);
+    const burnElsewhere = Boolean(parsed.burn) && burnDayKey !== time.dayKey;
     const burnState = burnElsewhere ? await dayState(store, user, burnDayKey, p) : state;
     const burnItems = parsed.items.filter(looksLikeBurn);
     parsed.items = parsed.items.filter((item) => !looksLikeBurn(item));

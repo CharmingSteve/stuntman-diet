@@ -114,8 +114,8 @@ describe("food resolution", () => {
   });
 
   it("parses burn totals and component sums deterministically", () => {
-    expect(parseBurnText("1550 + 1200")).toEqual({ components: [1550, 1200], total: 2750, day: null });
-    expect(parseBurnText("burned so far 3250")).toEqual({ total: 3250, components: [], day: null });
+    expect(parseBurnText("1550 + 1200")).toEqual({ components: [1550, 1200], total: 2750 });
+    expect(parseBurnText("burned so far 3250")).toEqual({ total: 3250, components: [] });
   });
 
   it("renders the required two-column table and full/short timestamp rules", () => {

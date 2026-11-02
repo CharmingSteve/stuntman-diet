@@ -273,7 +273,7 @@ entries.
   Without a date it goes to the day of the message. To record a burn for another
   day, name the day: `yesterday burned 1642 + 1615`, `Nov 1 I burned 1642 + 1615`
   (also `1 Nov`, `November 1st`), or `burned 1642 + 1615 on 2026-11-01`. A month and day
-  without a year mean the request's year, or the previous year if that date is still ahead. The reply confirms the day and total.
+  without a year mean the request's year, or the previous year if that date is still ahead. The day must be in the same clause as the burn ("today burned 1642 + 1615; same lunch as yesterday" is today). A message that names two different burn days is refused. The reply confirms the day and total.
   The day must be tracked. A burn needs no food entry, so it can be set on a day
   that has no log. Sending a new burn for a day replaces the old one. Burn is stored as `burn_source =
   recorded`. Clearing it needs a direct edit (section 4.5).
@@ -470,7 +470,7 @@ is defined in `infra/auth.yaml`. Shared release storage is
 | **DynamoDB** | `DietTable` | On-demand, PK/SK strings, AWS-owned key encryption (no KMS requests), PITR on, deletion protection on, retained on stack delete. |
 | **S3 "data puddle"** | `PuddleBucket` | Private, SSE-S3, versioned, retained, access-logged. Prefixes: `exports/` (current 90 days, noncurrent 30), `results/` (Athena output, 7 days), `images/` (food photos, noncurrent 90 days), `analytics-table-root/` (empty on purpose). |
 | **Glue / Athena** | Database `diet_<env>_<account>`, table `diet_items`, workgroup `stuntman-diet-<env>-trends` | Table location is the empty `analytics-table-root/`. Each snapshot is a partition at its own `data/` prefix. Workgroup enforces its configuration and a 100 MiB scan cap. |
-| **Bedrock** | `BedrockModel` parameter (default `us.amazon.nova-2-lite-v1:0`) | The app role may invoke only that inference profile and the foundation models behind it (region-wildcarded, since a geo profile routes across regions). |
+| **Bedrock** | `BedrockModel` parameter (default `us.amazon.nova-2-lite-v1:0`) | The app role may invoke only that inference profile. The foundation models behind it are allowed only when the call comes through that profile (`bedrock:InferenceProfileArn` condition), since a geo profile routes across regions. |
 | **Cognito** | User pool per environment | Admin-created users only (no self-signup). Password ≥ 16 characters with MFA optional (TOTP). Advanced security enforced. Browser client uses authorization code + PKCE (no secret), with 15-minute access and ID tokens. Smoke client uses `client_credentials` with scope `diet-smoke/parse`, which only allows `POST /api/chat`. |
 | **Logs** | Log groups with 30-day retention, KMS-encrypted | `/aws/lambda/web/<stack>` and `.local`, plus `/aws/lambda/<stack>-exports`. |
 | **Keys** | KMS keys for logs only | Retained on stack delete. DynamoDB uses an AWS-owned key. |
