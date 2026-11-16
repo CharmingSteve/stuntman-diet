@@ -58,6 +58,14 @@ describe("stated amounts", () => {
   it("takes a leading count when the model gives no quantity", () => {
     expect(resolve("3 borekas", { display_name: "Borekas", unit: "unit", quantity: null, food_key: "borekas" }).calories).toBe(339);
   });
+  it("takes a leading count over a catalog serving in the display name when the model gives no quantity", () => {
+    const r = resolve("3 borekas", { display_name: "Borekas (45g)", unit: "unit", quantity: null, food_key: "borekas" });
+    expect([r.quantity, r.calories]).toEqual([3, 339]);
+  });
+  it("strips a spaced unit along with a leading amount before fuzzy matching", () => {
+    const r = resolve("100 g protien noodles", { display_name: "Protein noodles", unit: "g", quantity: 100, food_key: null });
+    expect([r.foodId, r.quantity, r.unit]).toEqual(["protein_noodles", 100, "g"]);
+  });
   it("defaults a food with a serving to one serving when no amount is given", () => {
     const r = resolve("naama", { display_name: "Naama processed cheese", unit: "portion", quantity: null, food_key: "naama_processed_cheese" });
     expect([r.quantity, r.unit, r.calories]).toEqual([1, "portion", 74]);

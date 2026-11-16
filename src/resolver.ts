@@ -90,9 +90,10 @@ function selectedCalories(row: FoodRow, quantity: number, unit: string): number 
 
 const ambiguityToleranceKcal = 50;
 
-// The name the user typed, without a leading count ("3 borekas") or an amount ("30g", "100 calories").
+// The name the user typed, without an amount ("30g", "100 g", "100 calories") or a leading count ("3 borekas").
+// Amounts go first so a spaced unit ("100 g protien") is removed with its number, not left behind.
 function matchText(raw: string): string {
-  return normalizeFoodText(raw.replace(/^\s*\d+(?:\.\d+)?\s+/, "").replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+  return normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, "").replace(/^\s*\d+(?:\.\d+)?\s+/, ""));
 }
 
 function aliasCandidates(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string): FoodRow[] {
@@ -148,15 +149,19 @@ export function resolveItems(db: Database.Database, userId: string, parsed: Pars
 
 // A mass or volume the user typed is authoritative over the model's unit/quantity guess.
 // The display name is not what was eaten: "Borekas (45g)" is a catalog serving, so it only fills in
-// an amount when the model gave no quantity at all. A count in raw ("3 borekas") fills in the same way.
+// an amount when the model gave no quantity at all. A count in raw ("3 borekas") is checked before
+// the display name, so it wins over a serving amount there.
 function withStatedAmount(item: ParsedMessage["items"][number]): ParsedMessage["items"][number] {
   const amountPattern = /(\d+(?:\.\d+)?)\s*(kg|grams?|gr|g|ml)\b/i;
-  const found = amountPattern.exec(item.raw) ?? (item.quantity === null ? amountPattern.exec(item.display_name) : null);
-  if (!found) {
-    const count = /^\s*(\d+(?:\.\d+)?)\s+\S/.exec(item.raw);
-    if (item.quantity === null && count && Number(count[1]) > 0) return { ...item, quantity: Number(count[1]) };
-    return item;
-  }
+  const rawAmount = amountPattern.exec(item.raw);
+  if (rawAmount) return applyStatedAmount(item, rawAmount);
+  const count = /^\s*(\d+(?:\.\d+)?)\s+\S/.exec(item.raw);
+  if (item.quantity === null && count && Number(count[1]) > 0) return { ...item, quantity: Number(count[1]) };
+  const catalogAmount = item.quantity === null ? amountPattern.exec(item.display_name) : null;
+  return catalogAmount ? applyStatedAmount(item, catalogAmount) : item;
+}
+
+function applyStatedAmount(item: ParsedMessage["items"][number], found: RegExpExecArray): ParsedMessage["items"][number] {
   const amount = Number(found[1]);
   const unit = found[2]!.toLowerCase();
   if (!Number.isFinite(amount) || amount <= 0) return item;
