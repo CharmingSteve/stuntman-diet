@@ -61,11 +61,17 @@ export async function questionFacts(store: Store, user: string, p: Profile, toda
     };
   });
   const health = [...new Set(metrics.map((m) => m.metric))].map((metric) => {
-    const group = metrics.filter((m) => m.metric === metric), values = group.map((m) => m.value);
+    // Chronological, so the direction of change is visible: first and last reading, and last minus first.
+    const group = metrics.filter((m) => m.metric === metric).sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
+    const values = group.map((m) => m.value);
+    const first = group[0]!, last = group[group.length - 1]!;
     return {
-      metric, unit: group[0]!.unit, readings: group.length,
+      metric, unit: first.unit, readings: group.length,
       average: Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10,
-      minimum: Math.min(...values), maximum: Math.max(...values)
+      minimum: Math.min(...values), maximum: Math.max(...values),
+      first: { at: first.occurred_at, value: first.value },
+      last: { at: last.occurred_at, value: last.value },
+      change: Math.round((last.value - first.value) * 10) / 10
     };
   });
   return {

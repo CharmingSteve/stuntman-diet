@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDatabase } from "../src/db.js";
 import { SQLiteStore } from "../src/store-sqlite.js";
 import { allItems, type Store } from "../src/store.js";
@@ -12,10 +12,14 @@ vi.mock("../src/llm.js", () => ({ parseMessage: parse, narrateFacts: narrate }))
 
 let store: Store;
 beforeEach(() => {
+  // history() reads the real clock for "today", so pin it: 2026-11-16 is the day these tests call today.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-16T12:00:00+02:00"));
   store = new SQLiteStore(createDatabase(":memory:"));
   parse.mockReset();
   narrate.mockReset().mockResolvedValue("answer");
 });
+afterEach(() => { vi.useRealTimers(); });
 
 const reply = (over: Record<string, unknown> = {}) => ({
   intent: "food_log", day_hint: null, items: [], burn: null, correction: null,
@@ -141,7 +145,18 @@ describe("question windows", () => {
   });
 });
 
+describe("question messages never change the ledger", () => {
+  it("a question that also returns items records nothing", async () => {
+    parse.mockResolvedValueOnce(reply({ intent: "question", question: "How much bread did I eat?", items: [item("bread", { calories: 200 })] }));
+    await chat(store, "u", "qq1", { text: "how much bread did I eat?", client_time: "2026-11-16T12:00:00+02:00" }, []);
+    expect(await dayEntries("2026-11-16")).toEqual([]);
+  });
+});
+
 describe("unclear-note matching", () => {
+  it("a merged item that names two foods still flags the one it did not resolve", () => {
+    expect(possiblyMissingFoods("cheese and bread", [{ raw: "cheese and bread", display_name: "Cheese", food_key: "cheese" }], [cheese, bread]).map((n) => n)).toEqual(["Bread"]);
+  });
   it("does not flag a food the message only contains as part of another word", () => {
     expect(possiblyMissingFoods("steak and eggs", [{ raw: "steak and eggs", display_name: "steak and eggs", food_key: "steak" }],
       [{ id: "tea", name: "Tea", aliases: ["tea"], category: "drinks", basis: { calories: 2 } } as FoodRecord])).toEqual([]);

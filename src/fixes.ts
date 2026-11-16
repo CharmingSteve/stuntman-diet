@@ -161,6 +161,12 @@ export async function applyFix(
     resultFix = { action: "calories", superseded_entry_id: entry.id, entry_id: id, calories };
   }
 
+  // An entry changed: a day the user confirmed complete reopens to automatic. Its record is written once, even when
+  // the burn path already wrote it (state.data is the same object, so that write carries the reset too).
+  if (state.data.completeness === "complete") {
+    state.data.completeness = "missing";
+    if (!writes.some((w) => w.item.SK === `DAY#${day}#META`)) writes.push(write(userPK(user), `DAY#${day}#META`, "day", state.data, state.old));
+  }
   const effective = effectiveBurn(state.data);
   const summary = renderDailySummary(remaining, effective?.total ?? null, entry.occurred_at, state.data.timezone, false, true, effective?.source);
   const note = usableBurn(state.data, effectiveCompleteness(state.data, remaining.length, clientDay)) === null ? "Net is unknown until the day is complete." : "";

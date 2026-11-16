@@ -38,10 +38,12 @@ function entryChoices(rows: Array<{ entry: Entry }>): string {
 
 // A catalog food named in the message that no parsed item covers is probably merged into another item or dropped.
 // Matching is by whole word, allows a plural ("cheeses"), and ignores punctuation ("cheese,").
+// An item covers only the food it resolved to (its key or its name), never every food its raw text mentions:
+// "cheese and bread" resolved to Cheese does not cover Bread.
 export function possiblyMissingFoods(text: string, items: Array<{ raw: string; display_name: string; food_key: string | null }>, foods: FoodRecord[]): string[] {
   const clean = (value: string) => ` ${normalizeFoodText(value.replace(/[^\p{L}\p{N}]+/gu, " "))} `;
   const said = clean(text);
-  const covered = items.map((i) => clean(`${i.raw} ${i.display_name}`));
+  const covered = items.map((i) => clean(i.display_name));
   const word = (name: string) => new RegExp(` ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(s|es)? `);
   return foods.filter((food) => {
     const names = [food.name, ...food.aliases].map((n) => normalizeFoodText(n.replace(/[^\p{L}\p{N}]+/gu, " "))).filter((n) => n.length >= 3);
@@ -74,6 +76,16 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const yesterday = new Date(Date.parse(`${time.dayKey}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
     const deterministicBurn = parseBurnText(input.text);
     if (deterministicBurn) { parsed.burn = deterministicBurn; parsed.intent = "burn"; }
+    // A question only reads the ledger. It returns here, before any write is prepared or any guard runs,
+    // even if the model also returned items, a burn, or a correction.
+    if (parsed.intent === "question" && parsed.question) {
+      const todayEntries = active.map((e) => e.entry);
+      const todayCompleteness = effectiveCompleteness(state.data, todayEntries.length, time.dayKey);
+      const intake = todayEntries.reduce((n, e) => n + e.calories, 0);
+      const facts = await questionFacts(store, user, p, time.dayKey, parsed.question);
+      const answer = await narrateFacts(parsed.question, { today: { intake, burn: usableBurn(state.data, todayCompleteness), completeness: todayCompleteness, eligibility: state.data.eligibility }, ...facts });
+      return { writes: [], result: { intent: parsed.intent, items: [], unclear: [], needs_clarification: [], correction: null, message: answer, summary: null, question: parsed.question } };
+    }
     // The day comes from the burn's own clause, so it applies to a model-read burn too.
     // Without a named day the burn belongs to the request's day.
     const phrases = parsed.burn ? burnDayPhrases(input.text) : [];
@@ -115,7 +127,8 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     }
     const writes = [], entries = active.map((e) => e.entry);
     const recordable = resolved;
-    if ((recordable.length || parsed.correction) && state.data.eligibility !== "tracked")
+    // Only new food placed today needs today to be tracked. A correction is checked against the day it changes.
+    if (recordable.length && state.data.eligibility !== "tracked")
       throw new InputError("Not tracking on this date. Explicitly enable tracking for this day before recording calories.");
     if (parsed.burn && burnState.data.eligibility !== "tracked")
       throw new InputError(`Not tracking on ${burnDayKey}. Set that day to tracked in History before recording burn.`);
@@ -125,6 +138,7 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     const placed: Array<{ item: ResolvedItem; day_key: string; occurred_at: string; timezone: string }> = [];
     const newItems = [...recordable];
     let correctedDay: string | null = null;
+    let correctedName: string | null = null;
     if (parsed.correction) {
       const c = parsed.correction;
       const phrase = c.target.toLocaleLowerCase();
@@ -147,15 +161,24 @@ export async function chat(store: Store, user: string, key: string, body: unknow
         if (c.fraction === null || c.fraction <= 0 || c.fraction >= 1) throw new InputError("Remaining fraction must be between zero and one");
         replacement = { id: randomUUID(), foodId: target.entry.food_id, raw: input.text, name: target.entry.display_name, quantity: (target.entry.quantity ?? 1) * c.fraction, unit: target.entry.unit, calories: Math.round(target.entry.calories * c.fraction), caloriesSource: target.entry.calories_source, matchStage: "correction", supersedesEntryId: target.entry.id };
       }
+      // A replacement lands on the corrected entry's own day, so that day must be tracked.
+      if (replacement && (await dayState(store, user, target.entry.day_key, p)).data.eligibility !== "tracked")
+        throw new InputError(`Not tracking on ${target.entry.day_key}. Set that day to tracked in History before correcting it.`);
       const status = c.action === "void" ? "void" : "superseded";
       writes.push(write(userPK(user), target.row.SK, "entry", { ...target.entry, status, superseded_by: status === "void" ? null : replacement?.id ?? null }, target.row));
       const index = entries.findIndex((e) => e.id === target.entry.id);
       if (index >= 0) entries.splice(index, 1);
       if (status !== "void" && replacement) placed.push({ item: replacement, day_key: target.entry.day_key, occurred_at: target.entry.occurred_at, timezone: target.entry.timezone });
       correctedDay = target.entry.day_key;
+      correctedName = target.entry.display_name;
       correctionMessage = `${status === "void" ? "Voided" : "Updated"} ${target.entry.display_name}${target.entry.day_key === time.dayKey ? "" : ` on ${target.entry.day_key}`}.`;
     } else if (recordable.some((r) => r.supersedesEntryId)) {
       throw new InputError("Use an explicit correction to replace an existing entry");
+    }
+    // A correction that also names a new item is either a split ("the other half now") or a repeat of the same portion.
+    // The app cannot tell which from the text, so it records the item and says so.
+    if (parsed.correction?.action === "reduce_fraction" && correctedName) {
+      for (const r of newItems) unclear.push(`"${r.name}" was recorded as a new entry today. If it repeats the portion you corrected, remove it with "fix <time> delete".`);
     }
     for (const item of newItems) placed.push({ item, day_key: time.dayKey, occurred_at: time.original, timezone: p.timezone });
     for (const { item: r, day_key, occurred_at, timezone } of placed) {
@@ -165,12 +188,16 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     }
     // Automatic completeness follows the entries, so logging needs no flag. A day the user had confirmed as complete
     // reopens to automatic when its entries change. A day flagged incomplete stays flagged.
-    if ((recordable.length || parsed.correction) && state.data.completeness === "complete") state.data.completeness = "missing";
+    // Only a change to today's entries reopens today. A correction to an earlier day reopens that day only.
+    if ((recordable.length || correctedDay === time.dayKey) && state.data.completeness === "complete") state.data.completeness = "missing";
     if (correctedDay && correctedDay !== time.dayKey) {
-      const corrected = await dayState(store, user, correctedDay, p);
+      // When the burn is recorded on the same day, that day's record is already being written: reuse it,
+      // so the request never writes the same item twice.
+      const sameAsBurn = burnElsewhere && correctedDay === burnDayKey;
+      const corrected = sameAsBurn ? burnState : await dayState(store, user, correctedDay, p);
       if (corrected.data.completeness === "complete") {
         corrected.data.completeness = "missing";
-        writes.push(write(userPK(user), `DAY#${correctedDay}#META`, "day", corrected.data, corrected.old));
+        if (!sameAsBurn) writes.push(write(userPK(user), `DAY#${correctedDay}#META`, "day", corrected.data, corrected.old));
       }
     }
     const burnTotal = parsed.burn ? (parsed.burn.components.length ? parsed.burn.components.reduce((a, b) => a + b, 0) : parsed.burn.total) : null;
@@ -187,11 +214,6 @@ export async function chat(store: Store, user: string, key: string, body: unknow
     }
     // Today's completeness as the app shows it: automatic from its entries, unless the user flagged or confirmed it.
     const todayCompleteness = effectiveCompleteness(state.data, entries.length, time.dayKey);
-    if (parsed.intent === "question" && parsed.question) {
-      const intake = entries.reduce((n, e) => n + e.calories, 0);
-      const facts = await questionFacts(store, user, p, time.dayKey, parsed.question);
-      answer = await narrateFacts(parsed.question, { today: { intake, burn: usableBurn(state.data, todayCompleteness), completeness: todayCompleteness, eligibility: state.data.eligibility }, ...facts });
-    }
     if (recordable.length || (parsed.burn && !burnElsewhere) || parsed.correction) writes.push(write(userPK(user), `DAY#${time.dayKey}#META`, "day", state.data, state.old));
     if (burnElsewhere) writes.push(write(userPK(user), `DAY#${burnDayKey}#META`, "day", burnState.data, burnState.old));
     const burnLine = burnElsewhere ? `Burn recorded for ${burnDayKey}: ${burnTotal} kcal${parsed.burn!.components.length ? ` (${parsed.burn!.components.join(" + ")})` : ""}. It replaces any earlier burn for that day.` : "";
