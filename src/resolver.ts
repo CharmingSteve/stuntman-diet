@@ -90,15 +90,19 @@ function selectedCalories(row: FoodRow, quantity: number, unit: string): number 
 
 const ambiguityToleranceKcal = 50;
 
+// The name the user typed, without a leading count ("3 borekas") or an amount ("30g", "100 calories").
+function matchText(raw: string): string {
+  return normalizeFoodText(raw.replace(/^\s*\d+(?:\.\d+)?\s+/, "").replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+}
+
 function aliasCandidates(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string): FoodRow[] {
-  const normalized = normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+  const normalized = matchText(raw);
   const ids = new Set(aliases.filter((a) => a.normalized_alias === normalized || normalized.includes(a.normalized_alias)).map((a) => a.food_id));
   return rows.filter((row) => ids.has(row.id));
 }
 
 function bestFood(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_alias: string }>, raw: string, suggestedId: string | null): { row: FoodRow; stage: string } | null {
-  void suggestedId;
-  const normalized = normalizeFoodText(raw.replace(/\d+(?:\.\d+)?\s*(?:g|ml|calories?|קק\"ל)\b/gi, ""));
+  const normalized = matchText(raw);
   const exact = rows.find((row) => normalizeFoodText(row.name) === normalized);
   if (exact) return { row: exact, stage: "exact" };
   const matches = new Set(aliases
@@ -109,6 +113,9 @@ function bestFood(rows: FoodRow[], aliases: Array<{ food_id: string; normalized_
     if (row) return { row, stage: "alias" };
   }
   if (matches.size > 1) return null;
+  // The local matcher missed (a typo, for example). The model's catalog id is better evidence than fuzzy distance.
+  const suggested = suggestedId ? rows.find((candidate) => candidate.id === suggestedId) : undefined;
+  if (suggested) return { row: suggested, stage: "fuzzy" };
   const ranked = rows.map((row) => {
     const aliasStrings = aliases.filter((alias) => alias.food_id === row.id).map((alias) => alias.normalized_alias);
     const score = Math.min(distance(normalized, normalizeFoodText(row.name)), ...aliasStrings.map((alias) => distance(normalized, alias)));
@@ -140,10 +147,16 @@ export function resolveItems(db: Database.Database, userId: string, parsed: Pars
 }
 
 // A mass or volume the user typed is authoritative over the model's unit/quantity guess.
+// The display name is not what was eaten: "Borekas (45g)" is a catalog serving, so it only fills in
+// an amount when the model gave no quantity at all. A count in raw ("3 borekas") fills in the same way.
 function withStatedAmount(item: ParsedMessage["items"][number]): ParsedMessage["items"][number] {
   const amountPattern = /(\d+(?:\.\d+)?)\s*(kg|grams?|gr|g|ml)\b/i;
-  const found = amountPattern.exec(item.raw) ?? amountPattern.exec(item.display_name);
-  if (!found) return item;
+  const found = amountPattern.exec(item.raw) ?? (item.quantity === null ? amountPattern.exec(item.display_name) : null);
+  if (!found) {
+    const count = /^\s*(\d+(?:\.\d+)?)\s+\S/.exec(item.raw);
+    if (item.quantity === null && count && Number(count[1]) > 0) return { ...item, quantity: Number(count[1]) };
+    return item;
+  }
   const amount = Number(found[1]);
   const unit = found[2]!.toLowerCase();
   if (!Number.isFinite(amount) || amount <= 0) return item;
@@ -181,6 +194,10 @@ export function resolveCatalog(
     const price = (row: FoodRow): { calories: number | null; quantity: number; unit: string } => {
       const basis = JSON.parse(row.basis_json) as Record<string, unknown>;
       const massBased = typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" || typeof basis.calories_per_gram === "number";
+      // No amount given: one serving when the food defines one (naama = 1 x 25 g portion), not 100 g.
+      const portions = Array.isArray(basis.portions) ? basis.portions as Array<Record<string, unknown>> : [];
+      const hasServing = typeof portions[0]?.calories === "number" && (typeof portions[0]?.grams === "number" || typeof portions[0]?.ml === "number");
+      if (item.quantity === null && hasServing) return { calories: selectedCalories(row, 1, "portion"), quantity: 1, unit: "portion" };
       const quantity = item.quantity ?? (typeof basis.calories_per_gram === "number" ? 1
         : typeof basis.calories_per_100g === "number" || typeof basis.calories_per_100ml === "number" ? 100 : 1);
       const unit = item.quantity === null && massBased
