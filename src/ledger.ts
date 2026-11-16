@@ -4,6 +4,8 @@ import { allItems, StoreConflict, type Store, type StoreItem, type StoreWrite } 
 import { assertTimezone, dayKeyFor } from "./time.js";
 
 export class InputError extends Error {}
+// The named thing does not exist for this user. Mapped to HTTP 404.
+export class NotFoundError extends Error {}
 export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === value;
@@ -62,6 +64,10 @@ function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   return `{${Object.entries(value).filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
+}
+// Removing an entry voids it. The row is kept, so history and analytics can still see what was removed.
+export function voidedEntry(row: StoreItem): StoreWrite {
+  return write(row.PK, row.SK, "entry", { ...row.data, status: "void", superseded_by: null }, row);
 }
 export function write(PK: string, SK: string, entity: string, data: Record<string, unknown>, previous?: StoreItem): StoreWrite {
   return { item: { PK, SK, entity, data, version: (previous?.version ?? 0) + 1 }, expectedVersion: previous?.version ?? null };

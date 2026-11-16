@@ -268,6 +268,12 @@ A message can correct an earlier entry and log today's part in one go: "ate
 half yesterday, the other half now" supersedes yesterday's entry at half and
 records today's half as a new entry.
 
+Each logged food row in History has a **Remove** button. Tapping it opens a
+confirmation box: "Keep it" is the default, and Escape also keeps the entry.
+Confirming voids the entry, so it leaves intake and stays in history as removed.
+A day you had confirmed complete reopens to automatic. The same entry can be
+removed again without effect.
+
 ### 4.2 Day controls in History
 
 Expand a day in History. You can set **Tracking** (tracked or not tracking),
@@ -636,6 +642,7 @@ except `POST /api/admin/backup`.
 | `PUT /api/foods/:id/preferred-value` | Body `{calories_per_100g}` or `{calories}` (section 3.5) |
 | `GET /api/history?from&to` | Calendar days, entries, burn, net, completeness |
 | `PUT /api/days/:day` | `eligibility`, `completeness`, `accept_default_burn` |
+| `DELETE /api/days/:day/entries/:entryId` | Removes one entry from a day (voids it; the row is kept). Idempotency-Key required. Returns 404 for an unknown entry |
 | `POST /api/chat` | JSON `{text, client_time}` or multipart with optional `image` |
 | `POST /api/health-metrics` | Glucose, BP, or weight (201) |
 | `GET /api/trends?from&to` · `GET /api/trends/:id` · `DELETE /api/trends/:id` | Start, poll, or cancel a report |

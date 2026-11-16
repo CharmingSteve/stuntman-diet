@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { allItems, type Store, type StoreWrite } from "./store.js";
-import { dateSchema, dayState, effectiveBurn, effectiveCompleteness, entrySchema, usableBurn, userPK, write, InputError, type Entry, type Profile } from "./ledger.js";
+import { dateSchema, dayState, effectiveBurn, effectiveCompleteness, entrySchema, usableBurn, userPK, voidedEntry, write, InputError, type Entry, type Profile } from "./ledger.js";
 import { renderDailySummary } from "./renderer.js";
 
 // Deterministic repair commands. They never reach the LLM, so a mistake in a
@@ -128,7 +128,7 @@ export async function applyFix(
   let resultFix: Record<string, unknown>;
 
   if (command.action.kind === "delete") {
-    writes.push(write(userPK(user), target.row.SK, "entry", { ...target.row.data, status: "void", superseded_by: null }, target.row));
+    writes.push(voidedEntry(target.row));
     message = `Deleted ${shown} entry "${entry.display_name}" (${Math.round(entry.calories)} kcal).`;
     resultFix = { action: "delete", voided_entry_id: entry.id };
   } else if (command.action.kind === "burn") {

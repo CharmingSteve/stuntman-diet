@@ -108,6 +108,15 @@ summary { cursor: pointer; line-height: 1.6; }
 .hidden { display: none !important; }
 .unclear { border: 2px solid #b7791f; border-radius: 0.6rem; background: #fdf8ec; padding: 0.8rem 1rem; margin-top: 0.8rem; line-height: 1.5; }
 .unclear ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+/* Remove is a touch target: at least 44px tall, and it never wraps the food name. */
+.remove-entry { min-height: 44px; min-width: 44px; padding: 0.4rem 0.8rem; white-space: nowrap; }
+.confirm-dialog { border: 0; border-radius: 0.8rem; max-width: min(92vw, 28rem); padding: 1.2rem; }
+.confirm-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.confirm-dialog h2 { margin: 0 0 0.6rem; font-size: 1.15rem; }
+.confirm-dialog menu { display: flex; gap: 0.6rem; justify-content: flex-end; margin: 1rem 0 0; padding: 0; }
+.confirm-dialog button { min-height: 44px; min-width: 44px; padding: 0.5rem 1rem; }
+.danger { background: #b42318; color: #fff; }
+.secondary { background: #f5f8f4; color: inherit; }
 @media (max-width: 520px) {
   main { margin-top: 1rem; }
   .panel { padding: 1rem; }

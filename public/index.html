@@ -196,6 +196,16 @@ Was my weight trending up or down this month?</pre>
         </section>
       </div>
     </main>
+    <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog">
+        <h2 id="confirm-title">Remove this entry?</h2>
+        <p id="confirm-text"></p>
+        <menu>
+          <button type="submit" value="cancel" class="secondary">Keep it</button>
+          <button type="submit" value="remove" class="danger">Remove</button>
+        </menu>
+      </form>
+    </dialog>
     <script type="module" src="/app.js"></script>
   </body>
 </html>
