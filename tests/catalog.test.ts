@@ -43,9 +43,32 @@ describe("stated amounts", () => {
     const r = resolve("30 grams of peanut butter", { unit: "portion", quantity: 1 });
     expect([r.matchStage, r.calories, r.quantity, r.unit]).toEqual(["alias", 177, 30, "g"]);
   });
-  it("takes grams from the display name when the model drops them from raw", () => {
-    const r = resolve("pure peanut butter", { display_name: "Pure peanut butter (30g)", unit: "unit", quantity: 1 });
+  it("takes grams from the display name when the model gives no quantity", () => {
+    const r = resolve("pure peanut butter", { display_name: "Pure peanut butter (30g)", unit: "unit", quantity: null });
     expect([r.matchStage, r.calories]).toEqual(["exact", 177]);
+  });
+  it("does not let a catalog serving in the display name override the user's count", () => {
+    const r = resolve("3 borekas", { display_name: "Borekas (45g)", unit: "unit", quantity: 3, food_key: "borekas", match_stage: "alias" });
+    expect([r.quantity, r.unit, r.calories]).toEqual([3, "unit", 339]);
+  });
+  it("uses the model's catalog id when the typed name is misspelled", () => {
+    const r = resolve("3 borkeas", { display_name: "Borekas", unit: "unit", quantity: 3, food_key: "borekas", match_stage: "fuzzy" });
+    expect([r.foodId, r.calories]).toEqual(["borekas", 339]);
+  });
+  it("takes a leading count when the model gives no quantity", () => {
+    expect(resolve("3 borekas", { display_name: "Borekas", unit: "unit", quantity: null, food_key: "borekas" }).calories).toBe(339);
+  });
+  it("takes a leading count over a catalog serving in the display name when the model gives no quantity", () => {
+    const r = resolve("3 borekas", { display_name: "Borekas (45g)", unit: "unit", quantity: null, food_key: "borekas" });
+    expect([r.quantity, r.calories]).toEqual([3, 339]);
+  });
+  it("strips a spaced unit along with a leading amount before fuzzy matching", () => {
+    const r = resolve("100 g protien noodles", { display_name: "Protein noodles", unit: "g", quantity: 100, food_key: null });
+    expect([r.foodId, r.quantity, r.unit]).toEqual(["protein_noodles", 100, "g"]);
+  });
+  it("defaults a food with a serving to one serving when no amount is given", () => {
+    const r = resolve("naama", { display_name: "Naama processed cheese", unit: "portion", quantity: null, food_key: "naama_processed_cheese" });
+    expect([r.quantity, r.unit, r.calories]).toEqual([1, "portion", 74]);
   });
   it("resolves spoon measures of peanut butter", () => {
     expect(resolve("2 tbsp peanut butter", { unit: "tbsp", quantity: 2 }).calories).toBe(188);
