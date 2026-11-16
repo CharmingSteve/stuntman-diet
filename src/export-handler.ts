@@ -102,6 +102,8 @@ export async function validateExport(bucket: string, manifestKey: string, arn: s
 export async function processExports(store: Store): Promise<void> {
   const pointer = await store.get(exportPK, activeSK);
   const row = await activeJob(store, pointer);
+  // One line per poll, so a job that never moves shows up in the logs instead of looking like silence.
+  console.info("export poll", { active_job: pointer ? activeSchema.parse(pointer.data).job_id : null, status: row ? jobSchema.parse(row.data).status : null });
   if (row && pointer) return processJob(store, row, pointer);
   if (pointer && activeSchema.parse(pointer.data).job_id) {
     // The pointer names a finished or missing job; release it so requests can submit again.
