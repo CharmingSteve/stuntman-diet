@@ -58,7 +58,16 @@ fix 11:41 AM crackers delete</pre>
               <li><strong>calories N</strong> corrects the entry to N kcal (the old one is kept as superseded).</li>
             </ul>
           </details>
+          <details class="fix-help">
+            <summary>Ask about your health data (last month, last 10 days, and so on)</summary>
+            <p class="hint">Type a question in the box above. It is read-only: it records nothing. The answer uses your daily records for the period the question names: <code>last month</code> is the previous calendar month, or use <code>this month</code>, <code>last week</code>, or <code>last N days</code> (up to 92). With no period named, it uses the last 31 days. A day with no log is not counted as zero intake.</p>
+            <pre class="response">How was my intake last month?
+What were my glucose readings over the last 30 days?
+Was my weight trending up or down this month?</pre>
+            <p class="hint">Answers are not medical advice. Take anything worrying to a clinician.</p>
+          </details>
           <p id="log-status" class="status" role="status" aria-live="polite"></p>
+          <div id="unclear" class="unclear hidden" role="status" aria-live="polite"></div>
           <pre id="response" class="response hidden"></pre>
         </section>
         <section class="panel">

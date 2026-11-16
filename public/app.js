@@ -239,17 +239,33 @@ function selectControl(parent, labelText, choices, value) {
   return select;
 }
 
+// Anything recorded on a best guess is listed here. Nothing waits on these: the entry is already saved.
+function renderUnclear(items) {
+  const box = $("#unclear");
+  box.replaceChildren();
+  if (!items.length) {
+    show(box, false);
+    return;
+  }
+  addText(box, "strong", "Unclear (recorded as a best guess):");
+  const list = document.createElement("ul");
+  for (const text of items) addText(list, "li", text);
+  box.append(list);
+  show(box, true);
+}
+
 function dayControls(parent, day) {
   const form = document.createElement("form");
   form.className = "day-controls";
   const eligibility = selectControl(form, `Tracking for ${day.day}`, [["tracked", "Tracked"], ["untracked", "Not tracking"]], day.eligibility);
-  const completeness = selectControl(form, `Completeness for ${day.day}`, [["missing", "Missing"], ["partial", "Partial"], ["complete", "Complete (user-confirmed)"]], day.completeness);
+  const completeness = selectControl(form, `Completeness for ${day.day}`, [["missing", "Automatic (complete once the day has ended)"], ["partial", "Incomplete (surprises took over)"], ["complete", "Complete (user-confirmed)"]], day.completeness_setting ?? day.completeness);
   const label = addText(form, "label", "Explicitly accept assumed 2,000 kcal burn for this tracked day", "check");
   const accept = document.createElement("input");
   accept.type = "checkbox";
   label.prepend(accept);
   const updateBurnChoice = () => {
-    accept.disabled = eligibility.value !== "tracked" || completeness.value !== "complete" || day.burn_source === "recorded";
+    const confirmed = completeness.value === "complete" || (completeness.value === "missing" && day.completeness === "complete");
+    accept.disabled = eligibility.value !== "tracked" || !confirmed || day.burn_source === "recorded";
     if (accept.disabled) accept.checked = false;
   };
   eligibility.addEventListener("change", updateBurnChoice);
@@ -302,7 +318,7 @@ async function refreshHistory() {
       : eligible && day.completeness === "complete" ? 0 : null;
     const state = !eligible ? "Not tracking" : missing ? "No log" : day.completeness;
     addText(details, "summary", `${day.day} · ${state}${intake === null ? "" : ` · ${number(intake)} kcal logged`}`);
-    addText(details, "p", `Timezone: ${day.timezone} · Tracking: ${day.eligibility} · Completeness: ${day.completeness}`);
+    addText(details, "p", `Timezone: ${day.timezone} · Tracking: ${day.eligibility} · Completeness: ${day.completeness}${day.completeness_setting === "missing" ? " (automatic)" : " (set by you)"}`);
     if (day.entries.length) {
       const body = table(details, `Logged food on ${day.day}`, ["Time", "Food", "Calories (kcal)"]);
       for (const item of day.entries) {
@@ -879,6 +895,7 @@ $("#log-form").addEventListener("submit", (event) => {
     }
     const result = await api("/api/chat", { method: "POST", headers, body });
     pendingChat = undefined;
+    renderUnclear(result.unclear ?? []);
     $("#response").textContent = result.message || "No response";
     show($("#response"), true);
     if ($("#message").value.trim() === text) $("#message").value = "";

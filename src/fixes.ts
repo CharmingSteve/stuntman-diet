@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { allItems, type Store, type StoreWrite } from "./store.js";
-import { dateSchema, dayState, effectiveBurn, entrySchema, usableBurn, userPK, write, InputError, type Entry, type Profile } from "./ledger.js";
+import { dateSchema, dayState, effectiveBurn, effectiveCompleteness, entrySchema, usableBurn, userPK, write, InputError, type Entry, type Profile } from "./ledger.js";
 import { renderDailySummary } from "./renderer.js";
 
 // Deterministic repair commands. They never reach the LLM, so a mistake in a
@@ -163,7 +163,7 @@ export async function applyFix(
 
   const effective = effectiveBurn(state.data);
   const summary = renderDailySummary(remaining, effective?.total ?? null, entry.occurred_at, state.data.timezone, false, true, effective?.source);
-  const note = usableBurn(state.data) === null ? "Net is unknown until the day is complete." : "";
+  const note = usableBurn(state.data, effectiveCompleteness(state.data, remaining.length, clientDay)) === null ? "Net is unknown until the day is complete." : "";
   return {
     writes,
     result: {

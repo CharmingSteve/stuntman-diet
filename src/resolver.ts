@@ -15,6 +15,8 @@ export type ResolvedItem = {
   caloriesSource: "db" | "user_number" | "estimate";
   matchStage: string;
   supersedesEntryId: string | null;
+  // Set when several catalog options differ by more than the tolerance: the recorded calories are the middle option.
+  calorieRange?: { low: number; high: number };
 };
 
 type FoodRow = {
@@ -210,16 +212,19 @@ export function resolveCatalog(
       return { calories: selectedCalories(row, quantity, unit), quantity, unit };
     };
     if (!match) {
-      // Similar candidates are not worth a question: only ask when they differ by more than the tolerance.
+      // Never blocks: the middle option is recorded. When the options differ by more than the tolerance,
+      // the entry is marked ambiguous and its calorie range is reported so the user can correct it.
       const priced = aliasCandidates(rows, aliases, item.raw).map((row) => ({ row, ...price(row) }))
         .filter((p): p is typeof p & { calories: number } => p.calories !== null).sort((a, b) => a.calories - b.calories);
       const low = priced[0], high = priced[priced.length - 1];
-      if (low && high && priced.length > 1 && high.calories - low.calories <= ambiguityToleranceKcal) {
+      if (low && high && priced.length > 1) {
         const pick = priced[Math.floor(priced.length / 2)]!;
+        const unsure = high.calories - low.calories > ambiguityToleranceKcal;
         return {
           id: randomUUID(), foodId: pick.row.id, raw: item.raw, name: item.display_name || pick.row.name,
           quantity: pick.quantity, unit: pick.unit, calories: pick.calories, caloriesSource: "db",
-          matchStage: "alias", supersedesEntryId: item.supersedes_entry_id
+          matchStage: unsure ? "ambiguous" : "alias", supersedesEntryId: item.supersedes_entry_id,
+          ...(unsure ? { calorieRange: { low: low.calories, high: high.calories } } : {})
         };
       }
     }

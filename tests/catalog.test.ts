@@ -87,7 +87,8 @@ describe("ambiguity tolerance", () => {
     expect(r.matchStage).not.toBe("unresolved");
     expect(r.calories).toBeGreaterThan(170);
   });
-  it("asks only when candidates differ by more than 50 kcal", () => {
-    expect(resolveCatalog([food("pure_pb", 590), food("candied_pb", 700)], parsed(100))[0]?.matchStage).toBe("unresolved");
+  it("records the middle option, marked ambiguous, when candidates differ by more than 50 kcal", () => {
+    const r = resolveCatalog([food("pure_pb", 590), food("candied_pb", 700)], parsed(100))[0]!;
+    expect([r.matchStage, r.calories, r.calorieRange]).toEqual(["ambiguous", 700, { low: 590, high: 700 }]);
   });
 });

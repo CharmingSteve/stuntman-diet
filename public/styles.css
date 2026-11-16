@@ -106,6 +106,8 @@ summary { cursor: pointer; line-height: 1.6; }
 #import-report .response { max-height: 32rem; overflow: auto; }
 .trends { line-height: 1.5; }
 .hidden { display: none !important; }
+.unclear { border: 2px solid #b7791f; border-radius: 0.6rem; background: #fdf8ec; padding: 0.8rem 1rem; margin-top: 0.8rem; line-height: 1.5; }
+.unclear ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
 @media (max-width: 520px) {
   main { margin-top: 1rem; }
   .panel { padding: 1rem; }

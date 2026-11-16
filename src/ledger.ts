@@ -93,10 +93,19 @@ export function effectiveBurn(d: Day): { total: number; source: "recorded" | "as
   if (d.burn_total !== null) return { total: d.burn_total, source: d.burn_source === "recorded" ? "recorded" : "assumed" };
   return { total: defaultBurn, source: "assumed" };
 }
+// The stored completeness is the user's choice: "missing" = automatic, "partial" = flagged incomplete
+// (surprises), "complete" = user-confirmed. Automatic days: no entries means missing; entries on a past
+// day mean complete; entries on today mean partial until the day ends. analytics.ts mirrors this rule in SQL.
+export type Completeness = "missing" | "partial" | "complete";
+export function effectiveCompleteness(d: Pick<Day, "completeness" | "day_key">, entryCount: number, today: string): Completeness {
+  if (d.completeness !== "missing") return d.completeness;
+  if (entryCount === 0) return "missing";
+  return d.day_key < today ? "complete" : "partial";
+}
 // Net is only computed for complete tracked days; it uses the effective burn.
-export function usableBurn(d: Day): number | null {
+export function usableBurn(d: Day, completeness: Completeness): number | null {
   const burn = effectiveBurn(d);
-  return burn && d.completeness === "complete" ? burn.total : null;
+  return burn && completeness === "complete" ? burn.total : null;
 }
 export function dateRange(from?: string, to?: string): { from: string; to: string } {
   const start = dateSchema.parse(from ?? "1900-01-01");
@@ -122,9 +131,10 @@ export async function history(store: Store, user: string, from?: string, to?: st
     const day = new Date(Date.parse(`${end}T12:00:00Z`) - offset * 86400000).toISOString().slice(0, 10);
     const d = days.get(day) ?? newDay(day, p);
     const rows = entries.filter((e) => e.day_key === day).sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
-    const burn = usableBurn(d);
+    const completeness = effectiveCompleteness(d, rows.length, today);
+    const burn = usableBurn(d, completeness);
     const effective = effectiveBurn(d);
-    return { day, timezone: d.timezone, burn: effective?.total ?? null, burn_source: effective?.source ?? null, eligibility: d.eligibility, completeness: d.completeness, entries: rows, net: burn === null ? null : rows.reduce((n, e) => n + e.calories, 0) - burn };
+    return { day, timezone: d.timezone, burn: effective?.total ?? null, burn_source: effective?.source ?? null, eligibility: d.eligibility, completeness, completeness_setting: d.completeness, entries: rows, net: burn === null ? null : rows.reduce((n, e) => n + e.calories, 0) - burn };
   });
 }
 export async function replay(store: Store, user: string, key: string, payload: unknown): Promise<Record<string, unknown> | undefined> {
