@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "seed": "tsx --env-file-if-exists=.env src/seed.ts",
-    "test": "vitest run tests && node --test scripts/deployment.test.mjs",
+    "test": "vitest run tests && node --test scripts/deployment.test.mjs scripts/export-deadline.test.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {

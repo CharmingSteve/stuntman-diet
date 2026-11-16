@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { startedTooLate, startDeadlineMs } from "./export-deadline.mjs";
 
 const stack = process.argv[2];
 assert.match(stack ?? "", /^stuntman-diet-(staging|production)$/);
@@ -135,7 +136,7 @@ if (fixture) {
         JSON.stringify(marshal({ PK: "SYSTEM#EXPORT", SK: "ACTIVE", entity: "export_active", version: 1, data: { job_id: job } }).M));
       claimedJob = job;
       // The worker polls every 7 minutes: one poll records the snapshot, a later one starts the export.
-      // A job still pending after 20 minutes never got started, so fail now with the reason, not after 30 minutes.
+      // Staging has taken about 13 minutes to start an export, so a job still pending after the deadline is failed early.
       const claimedAt = Date.now();
       const finished = await waitFor(() => {
         const row = get("SYSTEM#EXPORT", `JOB#${job}`);
@@ -144,8 +145,8 @@ if (fixture) {
           const error = row?.data.M.error?.S;
           throw new Error(`Scheduled export worker reported failure: ${typeof error === "string" ? error.slice(0, 500) : "No structured job error"}`);
         }
-        if (status === "pending" && Date.now() - claimedAt > 20 * 60 * 1000) {
-          throw new Error(`Export job ${job} is still pending after 20 minutes: the scheduled export worker did not start it. ` +
+        if (startedTooLate({ status, claimedAt, now: Date.now() })) {
+          throw new Error(`Export job ${job} is still pending after ${startDeadlineMs / 60000} minutes: the scheduled export worker did not start it. ` +
             `Check the worker's logs (ExportWorkerName stack output) and the SYSTEM#EXPORT pointer.`);
         }
         return status === "complete" ? row : null;

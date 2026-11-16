@@ -138,6 +138,7 @@ async function processJob(store: Store, row: StoreItem, pointer: StoreItem): Pro
         ...job, status: "running", export_arn: response.ExportDescription.ExportArn,
         snapshot_id: job.job_id, snapshot_at: time.toISOString()
       }, row)]);
+      console.info("export job running", { job_id: job.job_id, requested_at: job.requested_at, started_at: new Date().toISOString() });
       return;
     }
     if (!job.export_arn || !job.snapshot_at || !job.snapshot_id) throw new Error("Running job lacks export metadata");
@@ -164,6 +165,7 @@ async function processJob(store: Store, row: StoreItem, pointer: StoreItem): Pro
       ...(newer ? [write(exportPK, "LATEST", "snapshot", { snapshot_id: job.snapshot_id, snapshot_at: job.snapshot_at, location: checked.location }, latest)] : []),
       releaseActive(pointer)
     ]);
+    console.info("export job complete", { job_id: job.job_id, requested_at: job.requested_at, completed_at: new Date().toISOString(), item_count: checked.count });
   } catch (error) {
     if (error instanceof StoreConflict) return;
     console.error("Export job failed", { job_id: job.job_id, error: error instanceof Error ? error.message : String(error) });
