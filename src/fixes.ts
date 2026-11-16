@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { allItems, type Store, type StoreWrite } from "./store.js";
-import { dateSchema, dayState, effectiveBurn, entrySchema, usableBurn, userPK, write, InputError, type Entry, type Profile } from "./ledger.js";
+import { dateSchema, dayState, effectiveBurn, effectiveCompleteness, entrySchema, usableBurn, userPK, voidedEntry, write, InputError, type Entry, type Profile } from "./ledger.js";
 import { renderDailySummary } from "./renderer.js";
 
 // Deterministic repair commands. They never reach the LLM, so a mistake in a
@@ -128,7 +128,7 @@ export async function applyFix(
   let resultFix: Record<string, unknown>;
 
   if (command.action.kind === "delete") {
-    writes.push(write(userPK(user), target.row.SK, "entry", { ...target.row.data, status: "void", superseded_by: null }, target.row));
+    writes.push(voidedEntry(target.row));
     message = `Deleted ${shown} entry "${entry.display_name}" (${Math.round(entry.calories)} kcal).`;
     resultFix = { action: "delete", voided_entry_id: entry.id };
   } else if (command.action.kind === "burn") {
@@ -161,9 +161,15 @@ export async function applyFix(
     resultFix = { action: "calories", superseded_entry_id: entry.id, entry_id: id, calories };
   }
 
+  // An entry changed: a day the user confirmed complete reopens to automatic. Its record is written once, even when
+  // the burn path already wrote it (state.data is the same object, so that write carries the reset too).
+  if (state.data.completeness === "complete") {
+    state.data.completeness = "missing";
+    if (!writes.some((w) => w.item.SK === `DAY#${day}#META`)) writes.push(write(userPK(user), `DAY#${day}#META`, "day", state.data, state.old));
+  }
   const effective = effectiveBurn(state.data);
   const summary = renderDailySummary(remaining, effective?.total ?? null, entry.occurred_at, state.data.timezone, false, true, effective?.source);
-  const note = usableBurn(state.data) === null ? "Net is unknown until the day is complete." : "";
+  const note = usableBurn(state.data, effectiveCompleteness(state.data, remaining.length, clientDay)) === null ? "Net is unknown until the day is complete." : "";
   return {
     writes,
     result: {

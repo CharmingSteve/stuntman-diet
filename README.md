@@ -30,6 +30,7 @@ in this repo uses `--profile click --region us-east-1`.
     - [4.3 Burn and health readings](#43-burn-and-health-readings)
     - [4.4 Import corrections](#44-import-corrections)
     - [4.5 Direct store edits (last resort: no audit trail)](#45-direct-store-edits-last-resort-no-audit-trail)
+    - [4.6 Unclear entries and health questions](#46-unclear-entries-and-health-questions)
   - [5. Tracking rules and what the numbers mean](#5-tracking-rules-and-what-the-numbers-mean)
   - [6. Historical import](#6-historical-import)
   - [7. Trends and analytics snapshots](#7-trends-and-analytics-snapshots)
@@ -70,8 +71,8 @@ in this repo uses `--profile click --region us-east-1`.
      when nothing in the catalog matches.
    - **Corrections.** A correction marks the old entry `superseded` or `void`.
      It never deletes it.
-   - **Write.** New entries are appended. The day record gets
-     `completeness = partial`. The writes and an idempotency receipt
+   - **Write.** New entries are appended. Completeness is not written by
+     logging: it is automatic (section 5). The writes and an idempotency receipt
      (`REQUEST#<key>`) commit together.
    - **Render.** `src/renderer.ts` builds the Markdown table with Total Intake,
      Calories Burned, and Net Calories.
@@ -256,16 +257,37 @@ The incident that led to this is in
 [`docs/incidents/2026-10-27-burn-recorded-as-food.md`](./docs/incidents/2026-10-27-burn-recorded-as-food.md).
 
 Natural-language corrections ("only ate 2/3 of the eggs", "didn't eat the
-cheese") still go through the model. Its target must match exactly one entry
-on the request's day, and a burn is never accepted as a replacement food.
+cheese", "only ate half of yesterday's cheese") still go through the model. The
+target must match exactly one active entry from the last 7 days (today
+included). If it matches none or several, the reply lists the active entries
+with their day, time, and kcal, so you can name the exact one. A correction
+keeps the original entry's day and time, so that day's tally is restated. A
+burn is never accepted as a replacement food.
+
+A message can correct an earlier entry and log today's part in one go: "ate
+half yesterday, the other half now" supersedes yesterday's entry at half and
+records today's half as a new entry.
+
+Each logged food row in History has a **Remove** button. Tapping it opens a
+confirmation box: "Keep it" is the default, and Escape also keeps the entry.
+Confirming voids the entry, so it leaves intake and stays in history as removed.
+A day you had confirmed complete reopens to automatic. The same entry can be
+removed again without effect.
 
 ### 4.2 Day controls in History
 
 Expand a day in History. You can set **Tracking** (tracked or not tracking),
-**Completeness** (missing, partial, or complete), and **accept the assumed 2000
-kcal burn** (only for tracked, complete days with no recorded burn). "Save day"
-calls `PUT /api/days/:day`. These controls change the day record, not the
-entries.
+**Completeness**, and **accept the assumed 2000 kcal burn** (only for tracked,
+complete days with no recorded burn). The Completeness options are:
+
+- **Automatic** (the default): complete once the day has ended, partial while it
+  is today, missing when there are no entries.
+- **Incomplete (surprises took over)**: always partial. Use this when the day
+  was not logged in full.
+- **Complete (user-confirmed)**: complete, whatever the entries.
+
+"Save day" calls `PUT /api/days/:day`. These controls change the day record, not
+the entries.
 
 ### 4.3 Burn and health readings
 
@@ -339,6 +361,36 @@ Rules of thumb:
 - Do not reuse an `Idempotency-Key` for a changed request. Receipts replay the
   old result.
 
+### 4.6 Unclear entries and health questions
+
+**Unclear box.** The app never waits for an answer before saving. If it had to
+guess, the entry is saved with its best guess and the reply shows an "Unclear"
+box that says what it guessed and why:
+
+- an item whose catalog options differ by more than 50 kcal (the range is shown;
+  the middle option is recorded);
+- an item with no calories found (recorded at 0 kcal; fix it with
+  `fix <time> calories <kcal>`);
+- a catalog food named in the message that no item covers (for example, a food
+  the model merged into another item). If you ate it, send it as its own message
+  or fix the entries;
+- anything the model itself flagged as unclear.
+
+**Health questions.** Type a question in the log box. It is read-only: it
+records nothing. The answer uses the daily records for the period the question
+names:
+
+- `last month` is the previous calendar month; `this month`; `last week`;
+  `last N days` (up to 92).
+- No period named: the last 31 days.
+
+Each day in that period is passed to the model with its intake, entries,
+burn, and effective completeness. A day with no log is passed as no intake,
+not as zero. The health readings in the same period are summarized too. Answers
+are not medical advice. The data source is the DynamoDB table (and its S3
+export for analytics), read through the app. The chat does not read the
+export.
+
 ## 5. Tracking rules and what the numbers mean
 
 - **Day key:** the calendar date of `client_time` in the profile timezone.
@@ -346,14 +398,18 @@ Rules of thumb:
 - **Non-tracking days:** Friday and Saturday by default (Settings), plus any
   observed holiday dates you list. Food on those days is refused until you set
   the day to tracked in History. Health readings are allowed on any day.
-- **Completeness:** `missing` means "No log". It is never zero intake.
-  `partial` is set automatically when you log food or burn. `complete` is only
-  set by you.
+- **Completeness** is automatic unless you set it (section 4.2). A day with no
+  entries is `missing` ("No log"), which is never zero intake. A day with
+  entries is `partial` while it is today and `complete` once it has ended. You
+  can flag a day `partial` (incomplete) or confirm it `complete` in History. A
+  new or changed entry on a day you had confirmed reopens that day to automatic.
+  Analytics apply the same rule.
 - **Burn:** `recorded` (a burn you wrote) or `assumed`. A tracked day with no
   written burn assumes **2000 kcal**, labelled "assumed". A recorded burn
   overrides it.
 - **Net** = intake − burn. It is shown only for tracked, complete days. Otherwise
-  it is "Unknown".
+  it is "Unknown". A complete day with no recorded burn nets against the
+  assumed 2000 kcal, and the table says so.
 - **Frozen days:** a day's eligibility and timezone are saved when its first
   record is written. Later Settings changes do not rewrite it. Days with no
   saved record follow the current Settings.
@@ -429,16 +485,17 @@ changed.
    not 200. The quantity is kept for display only (verified).
 4. **Per-user `calories` overrides can be silently ignored** on per-100g,
    per-100ml, and per-gram foods (section 3.5, verified).
-5. **Unresolved items are not recorded, and the message is generic.** Every
-   unresolved item gets the same reply, "could be options more than 50 kcal
-   apart", even when the food is simply unknown (`src/chat.ts`, verified). The
-   model's `needs_clarification` text is dropped whenever at least one item
-   resolves (read in code).
+5. **Unsure items are recorded, not held back.** Unresolved items and items
+   whose catalog options differ by more than 50 kcal are saved with a best
+   guess and listed in the "Unclear" box (section 4.6). The guess is only as
+   good as the catalog: fix it with `fix <time> calories <kcal>`.
 6. **The model's `food_key` is ignored.** Matching uses only the typed text, so
    calories always come from the catalog or from a stated number (`bestFood`
    takes no `food_key`).
-7. **Logging more food resets a complete day to partial** (`src/chat.ts`, read in
-   code). Re-mark the day complete in History afterwards.
+7. **Days auto-marked partial by the old logic show as Incomplete.** Before the
+   automatic completeness rule, every logged day was stored as partial. Those
+   days still read Incomplete until you change them in History (or set them to
+   Automatic). Days logged before the change are not re-derived.
 8. **Editing the legacy `log_entries` SQLite table has no effect** after the
    migration. The running app reads `store_items` (verified by grep). The
    `applyCorrection` helper that writes `log_entries` is called only by tests.
@@ -585,6 +642,7 @@ except `POST /api/admin/backup`.
 | `PUT /api/foods/:id/preferred-value` | Body `{calories_per_100g}` or `{calories}` (section 3.5) |
 | `GET /api/history?from&to` | Calendar days, entries, burn, net, completeness |
 | `PUT /api/days/:day` | `eligibility`, `completeness`, `accept_default_burn` |
+| `DELETE /api/days/:day/entries/:entryId` | Removes one entry from a day (voids it; the row is kept). Idempotency-Key required. Returns 404 for an unknown entry |
 | `POST /api/chat` | JSON `{text, client_time}` or multipart with optional `image` |
 | `POST /api/health-metrics` | Glucose, BP, or weight (201) |
 | `GET /api/trends?from&to` · `GET /api/trends/:id` · `DELETE /api/trends/:id` | Start, poll, or cancel a report |

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, StopQueryExecutionCommand } from "@aws-sdk/client-athena";
 import { z } from "zod";
 import type { Store } from "./store.js";
-import { write, userPK, dateRange, dayItems, daySchema, entrySchema, metricSchema, profile, newDay, usableBurn, effectiveBurn, defaultBurn, InputError } from "./ledger.js";
+import { write, userPK, dateRange, dayItems, daySchema, entrySchema, metricSchema, profile, newDay, usableBurn, effectiveBurn, effectiveCompleteness, defaultBurn, InputError } from "./ledger.js";
 import { exportPK, snapshotSchema, config, requestExport } from "./export-handler.js";
 import { dayKeyFor } from "./time.js";
 
@@ -11,6 +11,12 @@ const literal = (s: string): string => `'${s.replaceAll("'", "''")}'`;
 export function analyticsSQL(database: string, table: string, snapshot: string, user: string, from?: string, to?: string, snapshotAt = new Date().toISOString()): string {
   if (!/^[a-zA-Z0-9_]+$/.test(database) || !/^[a-zA-Z0-9_]+$/.test(table)) throw new Error("Invalid Glue identifier");
   const range = dateRange(from, to);
+  // Same rule as ledger.effectiveCompleteness. A stored "missing" is automatic: no entries means missing, a past day
+  // with entries means complete, and the snapshot's own day means partial. A stored partial or complete is the user's choice.
+  const completenessSQL = `CASE WHEN coalesce(d.completeness.s,'missing')<>'missing' THEN d.completeness.s
+        WHEN coalesce(m.entries,0)=0 THEN 'missing'
+        WHEN c.day < cast(at_timezone(from_iso8601_timestamp(${literal(snapshotAt)}),p.timezone) AS date) THEN 'complete'
+        ELSE 'partial' END`;
   // Only server-owned identifiers are interpolated; user/date/snapshot values are escaped literals.
   return `WITH source AS (
     SELECT item.entity.s entity, item.data.m d FROM "${database}"."${table}"
@@ -37,9 +43,9 @@ export function analyticsSQL(database: string, table: string, snapshot: string, 
         contains(coalesce(transform(p.p.holidays.l,x->x.s),ARRAY[]),cast(c.day AS varchar))
         OR contains(coalesce(transform(p.p.non_tracking_weekdays.l,x->cast(x.n AS integer)),ARRAY[5,6]),mod(day_of_week(c.day),7))
         THEN 'untracked' ELSE 'tracked' END) eligibility,
-      coalesce(d.completeness.s,'missing') completeness,
+      ${completenessSQL} completeness,
       CASE WHEN d.burn_total.n IS NULL THEN 'assumed' ELSE d.burn_source.s END burn_source,
-      CASE WHEN d.eligibility.s='tracked' AND d.completeness.s='complete'
+      CASE WHEN d.eligibility.s='tracked' AND (${completenessSQL})='complete'
         THEN coalesce(cast(d.burn_total.n AS double), ${defaultBurn}) END burn
     FROM calendar c CROSS JOIN policy p
     LEFT JOIN (SELECT d FROM source WHERE entity='day') metadata ON metadata.d.day_key.s=cast(c.day AS varchar)
@@ -165,6 +171,9 @@ export async function localTrends(store: Store, user: string, from?: string, to?
       if (!days.some((d) => d.day_key === date)) days.push(newDay(date, p));
     }
   }
+  const today = dayKeyFor(new Date(), p.timezone);
+  const intakeOn = (day: string) => entries.filter((e) => e.day_key === day).reduce((n, e) => n + e.calories, 0);
+  const completenessOf = (d: (typeof days)[number]) => effectiveCompleteness(d, entries.filter((e) => e.day_key === d.day_key).length, today);
   const rows: Record<string, unknown>[] = [];
   for (const kind of ["weekly", "monthly"]) {
     const groups = new Map<string, typeof days>();
@@ -175,16 +184,15 @@ export async function localTrends(store: Store, user: string, from?: string, to?
       groups.set(period, [...(groups.get(period) ?? []), day]);
     }
     for (const [period, group] of groups) {
-      const usable = group.filter((d) => usableBurn(d) !== null);
-      const intake = (day: string) => entries.filter((e) => e.day_key === day).reduce((n, e) => n + e.calories, 0);
-      rows.push({ kind, period, food: "", intake: group.reduce((n, d) => n + intake(d.day_key), 0),
-        burn: usable.length ? usable.reduce((n, d) => n + usableBurn(d)!, 0) : null,
-        net: usable.length ? usable.reduce((n, d) => n + intake(d.day_key) - usableBurn(d)!, 0) : null,
+      const usable = group.filter((d) => usableBurn(d, completenessOf(d)) !== null);
+      rows.push({ kind, period, food: "", intake: group.reduce((n, d) => n + intakeOn(d.day_key), 0),
+        burn: usable.length ? usable.reduce((n, d) => n + usableBurn(d, completenessOf(d))!, 0) : null,
+        net: usable.length ? usable.reduce((n, d) => n + intakeOn(d.day_key) - usableBurn(d, completenessOf(d))!, 0) : null,
         entries: entries.filter((e) => group.some((d) => d.day_key === e.day_key)).length,
         eligible: group.filter((d) => d.eligibility === "tracked").length,
-        complete: group.filter((d) => d.eligibility === "tracked" && d.completeness === "complete").length,
-        partial: group.filter((d) => d.eligibility === "tracked" && d.completeness === "partial").length,
-        missing: group.filter((d) => d.eligibility === "tracked" && d.completeness === "missing").length,
+        complete: group.filter((d) => d.eligibility === "tracked" && completenessOf(d) === "complete").length,
+        partial: group.filter((d) => d.eligibility === "tracked" && completenessOf(d) === "partial").length,
+        missing: group.filter((d) => d.eligibility === "tracked" && completenessOf(d) === "missing").length,
         excluded: group.filter((d) => d.eligibility === "untracked").length,
         assumed: usable.filter((d) => effectiveBurn(d)?.source === "assumed").length });
     }

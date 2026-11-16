@@ -63,7 +63,12 @@ describe("ledger policies and idempotency", () => {
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.data.status === "active")?.data.calories).toBe(100);
     expect(rows.find((r) => r.data.status === "superseded")?.data.superseded_by).toBeTruthy();
-    await expect(chat(store, "u", "friday", { ...body, client_time: "2025-01-10T12:00:00+02:00" }, [])).rejects.toThrow(/Not tracking/);
+    // A correction on Friday (untracked) to a tracked Sunday entry is allowed: the replacement lands on Sunday.
+    await chat(store, "u", "friday-correction", { ...body, client_time: "2025-01-10T12:00:00+02:00" }, []);
+    expect((await allItems(store, userPK("u"), { prefix: "DAY#2025-01-05#ENTRY#" })).filter((r) => r.data.status === "active")).toHaveLength(1);
+    // New food logged on Friday is still refused.
+    parse.mockResolvedValueOnce({ ...empty, items: [{ raw: "eggs", display_name: "Eggs", quantity: 1, unit: "unit", calories: 150, food_key: null, match_stage: "user_number", calories_source: "user_number", confidence: "high", supersedes_entry_id: null }] });
+    await expect(chat(store, "u", "friday-food", { ...body, text: "eggs", client_time: "2025-01-10T12:00:00+02:00" }, [])).rejects.toThrow(/Not tracking/);
   });
 });
 describe("historical imports", () => {

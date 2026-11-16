@@ -15,7 +15,8 @@ import { DynamoStore } from "./store-dynamo.js";
 import { allItems, StoreConflict, type Store } from "./store.js";
 import { seedFoods } from "./seed.js";
 import { seedCatalog } from "./catalog.js";
-import { profile, profileSchema, profileUpdateSchema, dateSchema, dayState, dayUpdateSchema, userPK, write, history, mutate, metricSchema, digest, InputError } from "./ledger.js";
+import { profile, profileSchema, profileUpdateSchema, dateSchema, dayState, dayUpdateSchema, userPK, write, history, mutate, metricSchema, digest, InputError, NotFoundError } from "./ledger.js";
+import { removeEntry } from "./entries.js";
 import { resolveRequestTime, TimeInputError } from "./time.js";
 import { chat } from "./chat.js";
 import { startTrends, queryResult, refresh, exportResult } from "./analytics.js";
@@ -70,6 +71,7 @@ export function createApp(
   app.onError((error, c) => {
     if (error instanceof z.ZodError) return c.json({ error: "Invalid input", details: error.issues.map((i) => i.message) }, 400);
     if (error instanceof InputError || error instanceof TimeInputError || error instanceof SyntaxError) return c.json({ error: error.message }, 400);
+    if (error instanceof NotFoundError) return c.json({ error: error.message }, 404);
     if (error instanceof StoreConflict) return c.json({ error: error.message }, 409);
     console.error("Request failed", { type: error.name, message: error.message });
     return c.json({ error: "Request failed; please retry or contact the administrator" }, 500);
@@ -113,6 +115,12 @@ export function createApp(
   app.get("/api/history", async (c) => {
     const days = await history(store, c.get("userId"), c.req.query("from"), c.req.query("to"));
     return c.json({ days, count: days.length });
+  });
+  // Removes one entry from a day (voids it; the row is kept). Tapped from the History table.
+  app.delete("/api/days/:day/entries/:entryId", async (c) => {
+    const user = c.get("userId"), day = dateSchema.parse(c.req.param("day")), entryId = c.req.param("entryId");
+    const key = idempotency(c.req.header("Idempotency-Key"));
+    return c.json(await mutate(store, user, key, { route: c.req.path }, () => removeEntry(store, user, day, entryId)));
   });
   app.put("/api/days/:day", async (c) => {
     const user = c.get("userId"), day = dateSchema.parse(c.req.param("day"));

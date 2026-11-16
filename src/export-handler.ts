@@ -102,6 +102,8 @@ export async function validateExport(bucket: string, manifestKey: string, arn: s
 export async function processExports(store: Store): Promise<void> {
   const pointer = await store.get(exportPK, activeSK);
   const row = await activeJob(store, pointer);
+  // One line per poll, so a job that never moves shows up in the logs instead of looking like silence.
+  console.info("export poll", { active_job: pointer ? activeSchema.parse(pointer.data).job_id : null, status: row ? jobSchema.parse(row.data).status : null });
   if (row && pointer) return processJob(store, row, pointer);
   if (pointer && activeSchema.parse(pointer.data).job_id) {
     // The pointer names a finished or missing job; release it so requests can submit again.
@@ -136,6 +138,7 @@ async function processJob(store: Store, row: StoreItem, pointer: StoreItem): Pro
         ...job, status: "running", export_arn: response.ExportDescription.ExportArn,
         snapshot_id: job.job_id, snapshot_at: time.toISOString()
       }, row)]);
+      console.info("export job running", { job_id: job.job_id, requested_at: job.requested_at, started_at: new Date().toISOString() });
       return;
     }
     if (!job.export_arn || !job.snapshot_at || !job.snapshot_id) throw new Error("Running job lacks export metadata");
@@ -162,6 +165,7 @@ async function processJob(store: Store, row: StoreItem, pointer: StoreItem): Pro
       ...(newer ? [write(exportPK, "LATEST", "snapshot", { snapshot_id: job.snapshot_id, snapshot_at: job.snapshot_at, location: checked.location }, latest)] : []),
       releaseActive(pointer)
     ]);
+    console.info("export job complete", { job_id: job.job_id, requested_at: job.requested_at, completed_at: new Date().toISOString(), item_count: checked.count });
   } catch (error) {
     if (error instanceof StoreConflict) return;
     console.error("Export job failed", { job_id: job.job_id, error: error instanceof Error ? error.message : String(error) });

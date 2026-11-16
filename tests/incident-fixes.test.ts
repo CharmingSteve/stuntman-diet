@@ -229,7 +229,9 @@ describe("a new day assumes a 2000 kcal burn unless one is written", () => {
     const d = await state("2026-10-28");
     expect(d.burn).toBe(2000);
     expect(d.burn_source).toBe("assumed");
-    expect(d.net).toBeNull();
+    // The day ended, so it is complete automatically. Its net uses the assumed 2000 kcal burn: 200 - 2000.
+    expect(d.completeness).toBe("complete");
+    expect(d.net).toBe(-1800);
   });
 
   it("a complete tracked day with no burn written nets against 2000", async () => {

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { startedTooLate, startDeadlineMs } from "./export-deadline.mjs";
 
 const stack = process.argv[2];
 assert.match(stack ?? "", /^stuntman-diet-(staging|production)$/);
@@ -99,6 +100,8 @@ if (fixture) {
   const PK = `USER#${user}`;
   const day = "2026-01-05";
   const seeded = [];
+  // The export job this run claimed. Released in `finally` so a failed run cannot leave the pointer busy.
+  let claimedJob = null;
   try {
     const common = { user_id: user, day_key: day, timezone: "Asia/Jerusalem" };
     put({ PK, SK: "PROFILE", entity: "profile", version: 1,
@@ -131,6 +134,10 @@ if (fixture) {
         data: { job_id: job, status: "pending", requested_at: new Date().toISOString() } });
       aws("dynamodb", "put-item", "--table-name", deployed.TableName, "--item",
         JSON.stringify(marshal({ PK: "SYSTEM#EXPORT", SK: "ACTIVE", entity: "export_active", version: 1, data: { job_id: job } }).M));
+      claimedJob = job;
+      // The worker polls every 7 minutes: one poll records the snapshot, a later one starts the export.
+      // Staging has taken about 13 minutes to start an export, so a job still pending after the deadline is failed early.
+      const claimedAt = Date.now();
       const finished = await waitFor(() => {
         const row = get("SYSTEM#EXPORT", `JOB#${job}`);
         const status = row?.data.M.status.S;
@@ -138,8 +145,13 @@ if (fixture) {
           const error = row?.data.M.error?.S;
           throw new Error(`Scheduled export worker reported failure: ${typeof error === "string" ? error.slice(0, 500) : "No structured job error"}`);
         }
+        if (startedTooLate({ status, claimedAt, now: Date.now() })) {
+          throw new Error(`Export job ${job} is still pending after ${startDeadlineMs / 60000} minutes: the scheduled export worker did not start it. ` +
+            `Check the worker's logs (ExportWorkerName stack output) and the SYSTEM#EXPORT pointer.`);
+        }
         return status === "complete" ? row : null;
       }, 1800, "scheduled worker publishes native export");
+      claimedJob = null;
       const snapshot = finished.data.M.snapshot_id.S;
       snapshots.push(snapshot);
       const partition = aws("glue", "get-partition", "--database-name", deployed.GlueDatabaseName,
@@ -178,9 +190,31 @@ if (fixture) {
     assert.notEqual(snapshots[0], snapshots[1], "Two distinct exports must exist");
     assert.ok(get("SYSTEM#EXPORT", "LATEST")?.data.M.snapshot_id.S, "Missing atomically published latest pointer");
   } finally {
+    if (claimedJob) {
+      try { releaseClaim(claimedJob); }
+      catch (error) { console.error(`Could not release export job ${claimedJob}; clear SYSTEM#EXPORT ACTIVE by hand:`, error); }
+    }
     for (const SK of seeded) {
       aws("dynamodb", "delete-item", "--table-name", deployed.TableName,
         "--key", JSON.stringify({ PK: { S: PK }, SK: { S: SK } }));
     }
   }
+}
+
+// Leaves the export pointer idle. A job this run did not finish is marked failed first, so the worker
+// will not resume it later and the next deploy is not blocked by "Export pointer is busy".
+function releaseClaim(job) {
+  const pointer = get("SYSTEM#EXPORT", "ACTIVE");
+  if (pointer?.data.M.job_id?.S !== job) return;
+  const row = get("SYSTEM#EXPORT", `JOB#${job}`);
+  if (row?.data.M.status.S !== "complete") {
+    aws("dynamodb", "update-item", "--table-name", deployed.TableName,
+      "--key", JSON.stringify({ PK: { S: "SYSTEM#EXPORT" }, SK: { S: `JOB#${job}` } }),
+      "--update-expression", "SET #data.#status = :failed, #data.#error = :error",
+      "--expression-attribute-names", JSON.stringify({ "#data": "data", "#status": "status", "#error": "error" }),
+      "--expression-attribute-values", JSON.stringify({ ":failed": { S: "failed" }, ":error": { S: "smoke test released this job before it finished" } }),
+      "--return-values", "NONE");
+  }
+  aws("dynamodb", "put-item", "--table-name", deployed.TableName, "--item",
+    JSON.stringify(marshal({ PK: "SYSTEM#EXPORT", SK: "ACTIVE", entity: "export_active", version: 1, data: { job_id: null } }).M));
 }

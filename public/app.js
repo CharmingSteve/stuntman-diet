@@ -239,17 +239,55 @@ function selectControl(parent, labelText, choices, value) {
   return select;
 }
 
+// Asks before removing: a mistaken tap must not delete an entry. "Keep it" is the default, and Escape keeps it.
+function confirmRemoval(item, day) {
+  const dialog = $("#confirm-dialog");
+  dialog.returnValue = "cancel";
+  $("#confirm-text").textContent = `"${item.display_name}" (${number(item.calories)} kcal) on ${day} will be removed from intake. It stays in history as removed.`;
+  dialog.showModal();
+  $("#confirm-dialog [value='cancel']").focus();
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "remove"), { once: true });
+  });
+}
+
+async function removeEntry(button, day, item) {
+  if (!(await confirmRemoval(item, day))) return;
+  action(button, $("#history-status"), async () => {
+    message($("#history-status"), `Removing ${item.display_name}…`);
+    await mutate(`/api/days/${encodeURIComponent(day)}/entries/${encodeURIComponent(item.id)}`, "DELETE");
+    message($("#history-status"), `Removed ${item.display_name}.`);
+    await refreshHistory();
+  });
+}
+
+// Anything recorded on a best guess is listed here. Nothing waits on these: the entry is already saved.
+function renderUnclear(items) {
+  const box = $("#unclear");
+  box.replaceChildren();
+  if (!items.length) {
+    show(box, false);
+    return;
+  }
+  addText(box, "strong", "Unclear (recorded as a best guess):");
+  const list = document.createElement("ul");
+  for (const text of items) addText(list, "li", text);
+  box.append(list);
+  show(box, true);
+}
+
 function dayControls(parent, day) {
   const form = document.createElement("form");
   form.className = "day-controls";
   const eligibility = selectControl(form, `Tracking for ${day.day}`, [["tracked", "Tracked"], ["untracked", "Not tracking"]], day.eligibility);
-  const completeness = selectControl(form, `Completeness for ${day.day}`, [["missing", "Missing"], ["partial", "Partial"], ["complete", "Complete (user-confirmed)"]], day.completeness);
+  const completeness = selectControl(form, `Completeness for ${day.day}`, [["missing", "Automatic (complete once the day has ended)"], ["partial", "Incomplete (surprises took over)"], ["complete", "Complete (user-confirmed)"]], day.completeness_setting ?? day.completeness);
   const label = addText(form, "label", "Explicitly accept assumed 2,000 kcal burn for this tracked day", "check");
   const accept = document.createElement("input");
   accept.type = "checkbox";
   label.prepend(accept);
   const updateBurnChoice = () => {
-    accept.disabled = eligibility.value !== "tracked" || completeness.value !== "complete" || day.burn_source === "recorded";
+    const confirmed = completeness.value === "complete" || (completeness.value === "missing" && day.completeness === "complete");
+    accept.disabled = eligibility.value !== "tracked" || !confirmed || day.burn_source === "recorded";
     if (accept.disabled) accept.checked = false;
   };
   eligibility.addEventListener("change", updateBurnChoice);
@@ -302,9 +340,9 @@ async function refreshHistory() {
       : eligible && day.completeness === "complete" ? 0 : null;
     const state = !eligible ? "Not tracking" : missing ? "No log" : day.completeness;
     addText(details, "summary", `${day.day} · ${state}${intake === null ? "" : ` · ${number(intake)} kcal logged`}`);
-    addText(details, "p", `Timezone: ${day.timezone} · Tracking: ${day.eligibility} · Completeness: ${day.completeness}`);
+    addText(details, "p", `Timezone: ${day.timezone} · Tracking: ${day.eligibility} · Completeness: ${day.completeness}${day.completeness_setting === "missing" ? " (automatic)" : " (set by you)"}`);
     if (day.entries.length) {
-      const body = table(details, `Logged food on ${day.day}`, ["Time", "Food", "Calories (kcal)"]);
+      const body = table(details, `Logged food on ${day.day}`, ["Time", "Food", "Calories (kcal)", "Remove"]);
       for (const item of day.entries) {
         const row = document.createElement("tr");
         let time = item.occurred_at;
@@ -312,6 +350,15 @@ async function refreshHistory() {
           time = new Intl.DateTimeFormat(undefined, { timeZone: day.timezone, hour: "2-digit", minute: "2-digit" }).format(new Date(item.occurred_at));
         } catch { /* Preserve the original timestamp if it cannot be formatted. */ }
         for (const text of [time, item.display_name, number(item.calories)]) addText(row, "td", text);
+        const removeCell = document.createElement("td");
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "remove-entry";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${item.display_name} from ${day.day}`);
+        remove.addEventListener("click", () => removeEntry(remove, day.day, item));
+        removeCell.append(remove);
+        row.append(removeCell);
         body.append(row);
       }
       addText(details, "p", `Logged intake tally: ${number(intake)} kcal${day.completeness !== "complete" ? " (partial coverage, not a whole-day total)" : ""}.`);
@@ -879,6 +926,7 @@ $("#log-form").addEventListener("submit", (event) => {
     }
     const result = await api("/api/chat", { method: "POST", headers, body });
     pendingChat = undefined;
+    renderUnclear(result.unclear ?? []);
     $("#response").textContent = result.message || "No response";
     show($("#response"), true);
     if ($("#message").value.trim() === text) $("#message").value = "";
