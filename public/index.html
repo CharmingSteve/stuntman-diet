@@ -43,6 +43,13 @@
               <button type="submit">Log entry</button>
             </div>
           </form>
+          <form id="weight-form" class="form-row">
+            <label for="weight-value">Today's weight (kg)</label>
+            <input id="weight-value" type="number" inputmode="decimal" step="0.1" min="20" max="500" required placeholder="e.g. 84.2">
+            <button type="submit">Save today's weight</button>
+          </form>
+          <p class="hint">This records today's weight only; there is no date to choose. Kilograms only. A weight is never copied to other days, and it is not counted in calories.</p>
+          <p id="weight-status" class="status" role="status" aria-live="polite"></p>
           <details class="fix-help">
             <summary>Fix a wrong entry (type it in the box above)</summary>
             <p class="hint">Fixes are exact commands. They never call the food model. Times use your profile timezone. Add a date (YYYY-MM-DD) to fix another day. If several entries share that minute, add a word from the name.</p>
