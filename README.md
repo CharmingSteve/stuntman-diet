@@ -205,9 +205,11 @@ Notes:
 
 ### 3.5 Override a preset just for yourself
 
-There is no UI. Call the API with your access token. In the browser, find
-`stuntman.accessToken` in DevTools → Application → Session Storage. Tokens last
-15 minutes.
+There is no UI. Call the API with your access token. The browser keeps the
+access token in memory and refreshes it from `stuntman.refreshToken` (DevTools →
+Application → Local Storage). To get a token for curl, exchange that refresh token
+at `<CognitoDomain>/oauth2/token` with `grant_type=refresh_token`. Access tokens
+last 15 minutes; refresh tokens last 30 days.
 
 ```sh
 curl -X PUT "https://<WebFunctionUrl>/api/foods/cottage_9/preferred-value" \
