@@ -2,7 +2,11 @@ const $ = (selector) => document.querySelector(selector);
 const loginPanel = $("#login-panel");
 const appPanel = $("#app-panel");
 const status = $("#status");
-const tokenKey = "stuntman.accessToken";
+// The refresh token lives in localStorage so each browser (Mac, phone) stays signed in
+// across tabs and restarts. The short-lived access token is kept in memory only.
+const refreshKey = "stuntman.refreshToken";
+let accessToken = "";
+let refreshing;
 
 function show(element, visible) {
   element.classList.toggle("hidden", !visible);
@@ -76,22 +80,71 @@ async function finishLogin() {
   if (!tokenResponse.ok) throw new Error("Could not complete sign-in");
   const tokens = await tokenResponse.json();
   if (typeof tokens.access_token !== "string") throw new Error("Sign-in did not return an access token");
-  sessionStorage.setItem(tokenKey, tokens.access_token);
+  storeTokens(tokens);
   sessionStorage.removeItem("stuntman.pkce");
   sessionStorage.removeItem("stuntman.oauthState");
   history.replaceState(null, "", location.pathname);
 }
 
-async function api(path, options = {}) {
-  const token = sessionStorage.getItem(tokenKey);
+function storeTokens(tokens) {
+  accessToken = tokens.access_token;
+  // Cognito returns a refresh token only on the code exchange; refresh responses omit it and keep the old one.
+  if (typeof tokens.refresh_token === "string") localStorage.setItem(refreshKey, tokens.refresh_token);
+}
+
+function forgetSession() {
+  accessToken = "";
+  localStorage.removeItem(refreshKey);
+}
+
+// Exchanges the stored refresh token for a new access token. Concurrent callers share one request.
+function refreshAccessToken() {
+  if (!refreshing) {
+    refreshing = (async () => {
+      const refreshToken = localStorage.getItem(refreshKey);
+      if (!refreshToken || !config?.domain || !config.clientId) return false;
+      const domain = config.domain.startsWith("https://") ? config.domain : `https://${config.domain}`;
+      try {
+        const response = await fetch(`${domain.replace(/\/$/, "")}/oauth2/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ grant_type: "refresh_token", client_id: config.clientId, refresh_token: refreshToken })
+        });
+        if (!response.ok) {
+          // Revoked, expired, or rejected: the user must sign in again.
+          if (response.status === 400 || response.status === 401) forgetSession();
+          return false;
+        }
+        const tokens = await response.json();
+        if (typeof tokens.access_token !== "string") return false;
+        storeTokens(tokens);
+        return true;
+      } catch {
+        // Network failure: keep the refresh token so the next attempt can succeed.
+        return false;
+      }
+    })().finally(() => { refreshing = undefined; });
+  }
+  return refreshing;
+}
+
+function showSignedOut() {
+  accessToken = "";
+  show(appPanel, false);
+  show(loginPanel, true);
+  show($("#logout"), false);
+}
+
+async function api(path, options = {}, retried = false) {
+  if (!accessToken && !retried) await refreshAccessToken();
   const headers = new Headers(options.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const response = await fetch(path, { ...options, headers, signal: AbortSignal.timeout(30000) });
   if (response.status === 401) {
-    sessionStorage.removeItem(tokenKey);
-    show(appPanel, false);
-    show(loginPanel, true);
-    show($("#logout"), false);
+    // The access token may have just expired; try one silent refresh before giving up.
+    if (!retried && await refreshAccessToken()) return api(path, options, true);
+    forgetSession();
+    showSignedOut();
     throw new Error("Your sign-in expired. Sign in again to continue.");
   }
   const body = await response.json().catch(() => ({}));
@@ -859,7 +912,7 @@ async function initialize() {
   try {
     await loadConfig();
     await finishLogin();
-    const authenticated = Boolean(sessionStorage.getItem(tokenKey));
+    const authenticated = Boolean(accessToken) || await refreshAccessToken();
     show(loginPanel, !authenticated);
     show(appPanel, authenticated);
     show($("#logout"), authenticated);
@@ -884,13 +937,22 @@ async function initialize() {
 }
 
 $("#login").addEventListener("click", () => startLogin().catch((error) => setStatus(error.message, true)));
-$("#logout").addEventListener("click", () => {
-  sessionStorage.removeItem(tokenKey);
+$("#logout").addEventListener("click", async () => {
+  const refreshToken = localStorage.getItem(refreshKey);
+  forgetSession();
   if (!config?.domain || !config.clientId) {
     location.reload();
     return;
   }
   const domain = config.domain.startsWith("https://") ? config.domain : `https://${config.domain}`;
+  // Revoke this browser's refresh token so it cannot be reused. Other devices keep their own sessions.
+  if (refreshToken) {
+    await fetch(`${domain.replace(/\/$/, "")}/oauth2/revoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: refreshToken, client_id: config.clientId })
+    }).catch(() => {});
+  }
   const url = new URL("/logout", domain);
   url.search = new URLSearchParams({
     client_id: config.clientId,

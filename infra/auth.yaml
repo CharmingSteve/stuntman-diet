@@ -53,7 +53,7 @@ Resources:
       EnableTokenRevocation: true
       AccessTokenValidity: 15
       IdTokenValidity: 15
-      RefreshTokenValidity: 1
+      RefreshTokenValidity: 30
       TokenValidityUnits:
         AccessToken: minutes
         IdToken: minutes
