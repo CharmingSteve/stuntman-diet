@@ -38,6 +38,37 @@ describe("parseWeightText", () => {
     expect(parseWeightText("weight 84.2 kg and an egg")).toMatchObject({ kind: "refuse", message: expect.stringContaining("its own message") });
   });
 
+  it("reads a clock time that comes before the weight, and does not take the clock number as the weight", () => {
+    expect(parseWeightText("this morning at 7: 84.2 kg")).toEqual({ kind: "record", value: 84.2, time: { hour: 7, minute: 0 } });
+  });
+
+  it("refuses a signed or leading-decimal number instead of recording a different value", () => {
+    expect(parseWeightText("weight -84.2 kg")).toMatchObject({ kind: "refuse", message: expect.stringContaining("between 20 and 500") });
+    expect(parseWeightText("weight .84 kg")).toMatchObject({ kind: "refuse", message: expect.stringContaining("between 20 and 500") });
+    expect(parseWeightText("-84.2 kg this morning")).toMatchObject({ kind: "refuse" });
+  });
+
+  it("refuses a weight with a date or a second number, rather than dropping the extra content", () => {
+    expect(parseWeightText("weight 84.2 kg 2026-11-16")).toMatchObject({ kind: "refuse", message: expect.stringContaining("its own message") });
+    expect(parseWeightText("weight 84.2 kg and 85")).toMatchObject({ kind: "refuse", message: expect.stringContaining("its own message") });
+  });
+
+  it("never records a question, so it reaches the read-only question path", () => {
+    expect(parseWeightText("Is my weight 84.2 kg?")).toBeNull();
+    expect(parseWeightText("Am I 84.2 kg")).toBeNull();
+    expect(parseWeightText("what is my weight")).toBeNull();
+  });
+
+  it("refuses a body-weight number mixed with food, before any model call", () => {
+    expect(parseWeightText("84.2 kg this morning and an egg")).toMatchObject({ kind: "refuse", message: expect.stringContaining("its own message") });
+  });
+
+  it("refuses an impossible 12-hour or 24-hour time instead of converting it", () => {
+    expect(parseWeightText("weight 84.2 kg at 13pm")).toMatchObject({ kind: "refuse", message: expect.stringContaining("time") });
+    expect(parseWeightText("weight 84.2 kg at 0pm")).toMatchObject({ kind: "refuse", message: expect.stringContaining("time") });
+    expect(parseWeightText("weight 84.2 kg at 25")).toMatchObject({ kind: "refuse", message: expect.stringContaining("time") });
+  });
+
   it("leaves food and other messages to the normal parser", () => {
     for (const text of ["200 g rice", "1 kg of rice", "2 eggs", "weigh the cheese 200g", "cheese 30g", "burned 1642 + 1615"]) {
       expect(parseWeightText(text), text).toBeNull();
