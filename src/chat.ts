@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Store } from "./store.js";
+import type { Store, StoreWrite } from "./store.js";
 import { allItems } from "./store.js";
-import { mutate, userPK, profile, dayState, write, dateSchema, entrySchema, dayItems, usableBurn, effectiveBurn, effectiveCompleteness, InputError, type Entry } from "./ledger.js";
-import { resolveRequestTime } from "./time.js";
+import { mutate, userPK, profile, dayState, write, dateSchema, entrySchema, metricSchema, dayItems, usableBurn, effectiveBurn, effectiveCompleteness, InputError, type Entry } from "./ledger.js";
+import { clockTime, instantAt, resolveRequestTime, type RequestTime } from "./time.js";
+import { parseWeightText, type WeightMessage } from "./weight.js";
 import { parseMessage, narrateFacts, type FoodImage } from "./llm.js";
 import { burnDayPhrases, parseBurnText } from "./parsing.js";
 import { resolveCatalog, type ResolvedItem } from "./resolver.js";
@@ -52,6 +53,25 @@ export function possiblyMissingFoods(text: string, items: Array<{ raw: string; d
   }).map((food) => food.name);
 }
 
+// A posted weight is one metric row on the day it was posted. The time is the one the user gave, or the request's time.
+// A refusal writes nothing and says what to send instead.
+function weightReply(weight: WeightMessage, user: string, time: RequestTime, timezone: string): { writes: StoreWrite[]; result: Record<string, unknown> } {
+  const reply = (message: string) => ({
+    intent: "weight", items: [], unclear: [], needs_clarification: [], correction: null, message, summary: null, question: null
+  });
+  if (weight.kind === "refuse") return { writes: [], result: reply(weight.message) };
+  const instant = weight.time ? instantAt(time.dayKey, weight.time.hour, weight.time.minute, timezone) : time.instant;
+  const id = randomUUID();
+  const data = metricSchema.parse({
+    id, day_key: time.dayKey, occurred_at: instant.toISOString(), timezone,
+    metric: "weight", value: weight.value, unit: "kg", source: "user_input"
+  });
+  return {
+    writes: [write(userPK(user), `DAY#${time.dayKey}#METRIC#${id}`, "metric", data)],
+    result: reply(`Recorded weight ${weight.value} kg on ${time.dayKey} at ${clockTime(instant, timezone)} (${timezone}).`)
+  };
+}
+
 export async function chat(store: Store, user: string, key: string, body: unknown, foods: FoodRecord[], image?: FoodImage, imageKey: string | null = null, imageHash?: string): Promise<Record<string, unknown>> {
   const input = chatSchema.parse(body);
   const fix = parseFixCommand(input.text);
@@ -65,6 +85,9 @@ export async function chat(store: Store, user: string, key: string, body: unknow
   }
   return mutate(store, user, key, { ...input, image_hash: imageHash ?? null }, async () => {
     const p = await profile(store, user), time = resolveRequestTime(input.client_time, p.timezone);
+    // A weight is recorded only when the user posts one. It never reaches the model, and it is never a food entry.
+    const weight = parseWeightText(input.text);
+    if (weight) return weightReply(weight, user, time, p.timezone);
     const state = await dayState(store, user, time.dayKey, p);
     const oldEntries = (await allItems(store, userPK(user), { prefix: `DAY#${time.dayKey}#ENTRY#` }));
     const active = oldEntries.map((e) => ({ row: e, entry: entrySchema.parse(e.data) })).filter((e) => e.entry.status === "active");

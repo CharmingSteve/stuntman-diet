@@ -301,11 +301,23 @@ the entries.
   The day must be tracked. A burn needs no food entry, so it can be set on a day
   that has no log. Sending a new burn for a day replaces the old one. Burn is stored as `burn_source =
   recorded`. Clearing it needs a direct edit (section 4.5).
-- **Health readings** (glucose, blood pressure, weight) are created only through
-  `POST /api/health-metrics` with an `Idempotency-Key`. The chat cannot create
-  them, and there is no edit or delete endpoint. Units and ranges:
-  `glucose` mg/dL (20–600), `bp_systolic` mmHg (50–300), `bp_diastolic` mmHg
-  (30–200), `weight` kg (20–500).
+- **Health readings** (glucose, blood pressure, weight) are created through
+  `POST /api/health-metrics` with an `Idempotency-Key`. There is no edit or
+  delete endpoint. Units and ranges: `glucose` mg/dL (20–600), `bp_systolic`
+  mmHg (50–300), `bp_diastolic` mmHg (30–200), `weight` kg (20–500).
+- **Weight in chat:** the chat records a weight only when you post one, such as
+  "weight 84.2 kg", "I weigh 84.2 kg", or "84.2 kg at 7". The reply confirms the
+  date and time in your timezone. A weight without a unit, or in pounds, is not
+  recorded: the reply asks for kilograms. Values outside 20–500 kg are refused.
+  The chat parses weight in code and never sends it to the model, so a weight
+  is never a food entry, is never copied to other days, and stays out of
+  calorie totals.
+- **Today's weight on the page:** under "Log a meal", the "Today's weight (kg)"
+  box saves a weight for today only. It has no date field: the page sends the
+  current time, so the server files the reading under today in your profile
+  timezone. Kilograms only, 20–500. Each save adds a reading for today. The
+  most recent reading is the current weight. Weight is never copied to other
+  days and is not counted in calories.
 
 ### 4.4 Import corrections
 
@@ -508,7 +520,7 @@ changed.
     `releases/<sha>/` in the artifacts bucket. The "editable without rebuild"
     promise in the Copilot build brief applies only to local runs. The catalog
     is packaged into the ZIP the same way.
-11. **Health readings have no UI.** Use the API (section 4.3).
+11. **Only today's weight has a UI.** Other health readings (glucose, blood pressure) are created through the API (section 4.3). Past-day weights cannot be entered on the page.
 12. **Backups:** `POST /api/admin/backup` returns 400 in the standard server
     path, because the app is not built with a raw SQLite handle (code reading).
     `src/backup-handler.ts` has no schedule: it is not wired into
