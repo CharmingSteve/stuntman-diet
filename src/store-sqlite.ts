@@ -130,7 +130,7 @@ export class SQLiteStore implements Store {
           burn_source: day.burn_total == null ? null : day.burn_source ?? "assumed",
           accept_default_burn: Boolean(day.accept_default_burn ?? false),
           eligibility: day.eligibility ?? (weekday === 5 || weekday === 6 ? "untracked" : "tracked"),
-          completeness: day.completeness ?? (entryDays.has(dayId(day)) ? "partial" : "missing")
+          completeness: day.completeness ?? "missing"
         });
       }
       for (const entry of entries) {

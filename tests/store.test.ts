@@ -257,7 +257,7 @@ describe("SQLite legacy migration", () => {
       expect((await store.get("USER#u", "PROFILE"))?.data.timezone).toBe("Asia/Jerusalem");
       expect((await store.get("USER#u", "DAY#2026-10-23#META"))?.data).toEqual({
         day_key: "2026-10-23", timezone: "Asia/Jerusalem", burn_total: 2000,
-        burn_source: "assumed", eligibility: "untracked", completeness: "partial",
+        burn_source: "assumed", eligibility: "untracked", completeness: "missing",
         accept_default_burn: false, burn_components: [1000, 1000]
       });
       expect((await store.get("USER#u", "DAY#2026-10-24#META"))?.data).toMatchObject({
