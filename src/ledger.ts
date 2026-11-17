@@ -70,9 +70,10 @@ export function voidedEntry(row: StoreItem): StoreWrite {
   return write(row.PK, row.SK, "entry", { ...row.data, status: "void", superseded_by: null }, row);
 }
 export function write(PK: string, SK: string, entity: string, data: Record<string, unknown>, previous?: StoreItem): StoreWrite {
-  // Every day write goes through here, so the stored burn always matches the tracking rule.
-  const stored = entity === "day" ? { ...data, ...withDefaultBurn(data as BurnFields) } : data;
-  return { item: { PK, SK, entity, data: stored, version: (previous?.version ?? 0) + 1 }, expectedVersion: previous?.version ?? null };
+  // Every day write goes through here, so the stored burn always matches the tracking rule. The object is updated in
+  // place, not copied: callers such as applyFix reset completeness on the same object after queuing this write.
+  if (entity === "day") Object.assign(data, withDefaultBurn(data as BurnFields));
+  return { item: { PK, SK, entity, data, version: (previous?.version ?? 0) + 1 }, expectedVersion: previous?.version ?? null };
 }
 export async function profile(store: Store, user: string): Promise<Profile> {
   const old = await store.get(userPK(user), "PROFILE");

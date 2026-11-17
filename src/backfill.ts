@@ -1,11 +1,13 @@
 import { withDefaultBurn, type Day } from "./ledger.js";
 
 // One-time repair for day records written before stored burn defaults and the importer fix.
-// Tracked days with no burn get the assumed default. A stored "partial" on a past day came from the importer,
-// not the owner, so it returns to automatic (which completes past days that have entries).
-// Today's record is left alone: it may be a deliberate mid-day stop.
-export function repairStoredDay(data: Day, today: string): Day {
+// Every tracked day with no burn gets the assumed default. Completeness is changed only for days the operator
+// lists explicitly: a stored "partial" cannot be told apart from a deliberate flag by its value alone, so nothing
+// is reopened by default. Today's record is never reopened.
+export function repairStoredDay(data: Day, today: string, reopenDays: ReadonlySet<string> = new Set()): Day {
   const repaired = withDefaultBurn(data);
-  if (repaired.completeness === "partial" && repaired.day_key < today) return { ...repaired, completeness: "missing" };
+  if (repaired.completeness === "partial" && repaired.day_key < today && reopenDays.has(repaired.day_key)) {
+    return { ...repaired, completeness: "missing" };
+  }
   return repaired;
 }

@@ -47,6 +47,15 @@ describe("tracked days store the assumed burn", () => {
     expect((await store.get(userPK(user), dayPK("2026-11-14")))!.data).toMatchObject({ burn_total: null, burn_source: null });
   });
 
+  it("normalizes the day object in place, so a caller's later completeness reset reaches the queued write", () => {
+    const data = { eligibility: "tracked", completeness: "complete", burn_total: null, burn_source: null };
+    const queued = write(userPK(user), dayPK("2026-11-16"), "day", data as unknown as Record<string, unknown>);
+    expect(queued.item.data).toBe(data);
+    expect(data).toMatchObject({ burn_total: 2000, burn_source: "assumed" });
+    data.completeness = "missing";
+    expect(queued.item.data.completeness).toBe("missing");
+  });
+
   it("switching a day to untracked clears the assumed burn, and back to tracked restores it", () => {
     const off = withDefaultBurn({ eligibility: "untracked", burn_total: 2000, burn_source: "assumed" });
     expect(off).toMatchObject({ burn_total: null, burn_source: null });
@@ -77,14 +86,19 @@ describe("repairStoredDay (production backfill rule)", () => {
     burn_total: null, burn_source: null, accept_default_burn: false, burn_components: []
   };
 
-  it("turns a past stored partial into automatic and stores the assumed burn", () => {
+  it("stores the assumed burn on a tracked day, and leaves a stored partial alone unless the day is listed", () => {
     const repaired = repairStoredDay({ ...base, completeness: "partial" }, "2026-11-17");
-    expect(repaired).toMatchObject({ completeness: "missing", burn_total: 2000, burn_source: "assumed" });
+    expect(repaired).toMatchObject({ completeness: "partial", burn_total: 2000, burn_source: "assumed" });
   });
 
-  it("leaves today's record alone, since it may be a deliberate mid-day stop", () => {
+  it("reopens a past partial only when the operator lists that day", () => {
+    const listed = new Set(["2026-11-10"]);
+    expect(repairStoredDay({ ...base, completeness: "partial" }, "2026-11-17", listed).completeness).toBe("missing");
+  });
+
+  it("never reopens today's record, even when listed, since it may be a deliberate mid-day stop", () => {
     const today = { ...base, day_key: "2026-11-17", completeness: "partial" as const };
-    expect(repairStoredDay(today, "2026-11-17").completeness).toBe("partial");
+    expect(repairStoredDay(today, "2026-11-17", new Set(["2026-11-17"])).completeness).toBe("partial");
   });
 
   it("keeps a user-confirmed complete day and a recorded burn", () => {

@@ -210,7 +210,9 @@ async function browserTableWrites(store: Store, user: string, rows: StoreItem[],
     activeKeys.push(sk);
   }
   // Only an explicit "complete" decision or a real source mismatch sets completeness here. Other imported days stay automatic.
+  // New entries reopen a day the owner had confirmed complete, so its net is not computed from changed intake.
   if (job.complete_days.includes(day)) state.data.completeness = "complete";
+  else if ((activeKeys.length || previousKeys.length) && state.data.completeness === "complete") state.data.completeness = "missing";
   const summaries = included.filter((r) => r.message.kind === "summary");
   if (summaries.length) {
     const independent = (await dayItems(store, user, day, day)).filter((e) =>
@@ -273,7 +275,9 @@ export async function confirmImport(store: Store, user: string, id: string): Pro
           }
           if (target) writes.push(write(pk, target.SK, "entry", { ...target.data, status: m.action === "void" ? "void" : "superseded", superseded_by: m.action === "void" ? null : record.source_id }, target));
           writes.push(write(pk, `SOURCE#${record.source_id}`, "source", { fingerprint: record.fingerprint, entry_sk: m.action === "void" ? null : entrySK, source_timestamp: m.timestamp, assigned_day: day, source_reference: m.source_reference ?? null }));
+          // A changed entry reopens a day the owner had confirmed complete, unless this import confirms it again.
           if (job.complete_days.includes(day)) state.data.completeness = "complete";
+          else if (state.data.completeness === "complete") state.data.completeness = "missing";
         } else {
           if (m.kind === "burn") { state.data.burn_total = z.number().parse(m.total); state.data.burn_source = "recorded"; }
           if (m.kind === "metric") {
@@ -320,9 +324,13 @@ export async function confirmImport(store: Store, user: string, id: string): Pro
         if (previous) {
           if (change.item.entity !== "day") throw new InputError("Source group writes the same non-day item twice");
           const before = previous.item.data, after = change.item.data;
+          // A recorded burn from an earlier row in this group is kept. A later row that read the store before it
+          // carries only the assumed default, so it must not replace the recorded burn.
+          const burnRow = before.burn_source === "recorded" && after.burn_source !== "recorded" ? before : after;
           change.item.data = { ...after,
-            completeness: before.completeness === "complete" || after.completeness === "complete" ? "complete" : before.completeness === "partial" || after.completeness === "partial" ? "partial" : "missing",
-            burn_total: after.burn_total ?? before.burn_total, burn_source: after.burn_source ?? before.burn_source
+            completeness: job.complete_days.includes(String(after.day_key)) ? "complete"
+              : before.completeness === "partial" || after.completeness === "partial" ? "partial" : after.completeness,
+            burn_total: burnRow.burn_total, burn_source: burnRow.burn_source
           };
         }
         writes.set(change.item.SK, change);
@@ -353,7 +361,8 @@ export async function confirmImport(store: Store, user: string, id: string): Pro
     ]);
     for (const incompleteDay of incompleteDays) {
       const day = await store.get(pk, `DAY#${incompleteDay}#META`);
-      if (day && day.data.completeness === "complete") await store.transact([write(pk, day.SK, "day", { ...day.data, completeness: "partial" }, day)]);
+      // Conflict or failed days are flagged partial whether they were automatic or confirmed complete.
+      if (day && day.data.completeness !== "partial") await store.transact([write(pk, day.SK, "day", { ...day.data, completeness: "partial" }, day)]);
     }
     const current = await store.get(pk, old.SK);
     if (current && current.data.status !== "complete") {

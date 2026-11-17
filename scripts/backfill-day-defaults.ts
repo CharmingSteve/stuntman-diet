@@ -4,7 +4,9 @@ import { daySchema } from "../src/ledger.js";
 import { repairStoredDay } from "../src/backfill.js";
 
 // One-time production repair (see src/backfill.ts). Dry run unless --apply is given.
-// Usage: npx tsx scripts/backfill-day-defaults.ts --table <TableName> [--region us-east-1] [--today YYYY-MM-DD] [--apply]
+// Usage: npx tsx scripts/backfill-day-defaults.ts --table <TableName> [--region us-east-1] [--today YYYY-MM-DD]
+//          [--reopen-days 2026-10-26,2026-10-27] [--apply]
+// --reopen-days lists the only past days whose stored "partial" returns to automatic. Without it, completeness is untouched.
 // Take a DynamoDB backup before --apply. Each write is conditional on the version it read.
 
 const arg = (name: string): string | undefined => {
@@ -16,6 +18,7 @@ if (!table) throw new Error("--table is required");
 const region = arg("region") ?? "us-east-1";
 const today = arg("today") ?? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(new Date());
 const apply = process.argv.includes("--apply");
+const reopenDays = new Set((arg("reopen-days") ?? "").split(",").map((d) => d.trim()).filter(Boolean));
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
 type Change = { PK: string; SK: string; version: number; data: Record<string, unknown>; summary: string };
@@ -33,7 +36,7 @@ do {
   for (const item of page.Items ?? []) {
     scanned += 1;
     const before = daySchema.parse(item.data);
-    const after = repairStoredDay(before, today);
+    const after = repairStoredDay(before, today, reopenDays);
     const fields = ["burn_total", "burn_source", "completeness"] as const;
     if (fields.every((f) => before[f] === after[f])) continue;
     changes.push({

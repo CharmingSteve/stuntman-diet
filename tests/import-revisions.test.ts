@@ -65,6 +65,19 @@ describe("durable browser daily-table revisions", () => {
     expect(await active()).toHaveLength(1);
   });
 
+  it("reopens a confirmed complete day when a later import changes its entries without confirming it", async () => {
+    await finish(await prepared(browser("confirmed", 10, [["Eggs", 100]])));
+    expect((await store.get(pk, `DAY#${day}#META`))?.data.completeness).toBe("complete");
+    const preview = await previewImport(store, "u", browser("later", 12, [["Toast", 50]]));
+    await reviewImport(store, "u", String(preview.job_id), {
+      resolutions: (preview.records as RecordRow[]).map((r) => ({ source_id: r.source_id, action: "include" })),
+      complete_days: []
+    });
+    await finish(String(preview.job_id));
+    expect((await active()).map((e) => e.display_name)).toEqual(["Toast"]);
+    expect((await store.get(pk, `DAY#${day}#META`))?.data.completeness).toBe("missing");
+  });
+
   it("replaces earlier tables atomically, including unchanged rows, without touching manual/canonical meals or another day", async () => {
     const canonical = await previewImport(store, "u", { sources: [{ conversation_id: "independent", messages: [{
       id: "meal", kind: "meal", display_name: "Canonical", calories: 10,
