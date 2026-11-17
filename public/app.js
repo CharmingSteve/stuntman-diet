@@ -444,21 +444,51 @@ function renderTrends(result) {
     addText(root, "p", "No report rows for this snapshot and date range.");
     return;
   }
-  const columns = [
-    ["kind", "Report"], ["period", "Period"], ["food", "Food / metric"],
+  // Weekly and monthly rows carry the whole-day burn and net. Food and glucose rows are shown separately.
+  const periodColumns = [
     ["intake", "Logged intake (kcal)"], ["burn", "Burn (kcal)"], ["net", "Net (intake − burn)"],
-    ["entries", "Entries"], ["value", "Metric value"], ["eligible", "Eligible days"],
-    ["complete", "Complete"], ["partial", "Partial"], ["missing", "Missing"],
-    ["excluded", "Excluded"], ["assumed", "Assumed burn"]
+    ["entries", "Entries"], ["eligible", "Eligible days"], ["complete", "Complete"], ["partial", "Partial"],
+    ["missing", "Missing"], ["excluded", "Excluded"], ["assumed", "Assumed burn"]
   ];
-  const body = table(root, `Snapshot report · Data as of ${snapshot}`, columns.map(([, title]) => title));
-  for (const item of result.rows) {
-    const row = document.createElement("tr");
-    for (const [key] of columns) {
-      const value = item[key];
-      addText(row, "td", value === null || value === undefined ? "—" : typeof value === "number" ? number(value) : String(value));
+  const rowsOf = (kind) => result.rows.filter((item) => item.kind === kind);
+  const fill = (body, rows, columns) => {
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      for (const [key] of columns) {
+        const value = item[key];
+        addText(row, "td", value === null || value === undefined ? "—" : typeof value === "number" ? number(value) : String(value));
+      }
+      body.append(row);
     }
-    body.append(row);
+  };
+  const periodTable = (kind, label, title) => {
+    const rows = rowsOf(kind);
+    if (!rows.length) return;
+    const body = table(root, `${title} · Data as of ${snapshot}`, [label, ...periodColumns.map(([, text]) => text)]);
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      addText(row, "th", String(item.period));
+      for (const [key] of periodColumns) {
+        const value = item[key];
+        addText(row, "td", value === null || value === undefined ? "—" : typeof value === "number" ? number(value) : String(value));
+      }
+      body.append(row);
+    }
+  };
+  periodTable("weekly", "Week starting", "Weekly");
+  periodTable("monthly", "Month", "Monthly");
+  const glucose = rowsOf("glucose");
+  if (glucose.length) {
+    const body = table(root, "Glucose readings (daily average)", ["Day", "Average value"]);
+    fill(body, glucose, [["period"], ["value"]]);
+  }
+  const foods = rowsOf("food");
+  if (foods.length) {
+    const details = document.createElement("details");
+    addText(details, "summary", `Logged food totals (${foods.length} foods)`);
+    root.append(details);
+    const body = table(details, "Logged food totals", ["Food", "Logged intake (kcal)", "Entries"]);
+    fill(body, foods, [["food"], ["intake"], ["entries"]]);
   }
 }
 
