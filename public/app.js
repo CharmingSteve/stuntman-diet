@@ -977,6 +977,18 @@ $("#logout").addEventListener("click", async () => {
   });
   location.assign(url);
 });
+// Today's weight only: the request's time is the current time, so the server files it under today in the profile timezone.
+$("#weight-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  action(event.submitter, $("#weight-status"), async () => {
+    const value = Number($("#weight-value").value);
+    if (!Number.isFinite(value) || value < 20 || value > 500) throw new Error("Enter today's weight in kilograms, between 20 and 500.");
+    message($("#weight-status"), "Saving today's weight…");
+    const saved = await mutate("/api/health-metrics", "POST", { metric: "weight", value, unit: "kg", client_time: new Date().toISOString() });
+    $("#weight-value").value = "";
+    message($("#weight-status"), `Saved ${saved.value} kg for ${saved.day_key}.`);
+  });
+});
 $("#log-form").addEventListener("submit", (event) => {
   event.preventDefault();
   action(event.submitter, $("#log-status"), async () => {

@@ -306,6 +306,12 @@ the entries.
   them, and there is no edit or delete endpoint. Units and ranges:
   `glucose` mg/dL (20–600), `bp_systolic` mmHg (50–300), `bp_diastolic` mmHg
   (30–200), `weight` kg (20–500).
+- **Today's weight on the page:** under "Log a meal", the "Today's weight (kg)"
+  box saves a weight for today only. It has no date field: the page sends the
+  current time, so the server files the reading under today in your profile
+  timezone. Kilograms only, 20–500. Each save adds a reading for today. The
+  most recent reading is the current weight. Weight is never copied to other
+  days and is not counted in calories.
 
 ### 4.4 Import corrections
 
@@ -508,7 +514,7 @@ changed.
     `releases/<sha>/` in the artifacts bucket. The "editable without rebuild"
     promise in the Copilot build brief applies only to local runs. The catalog
     is packaged into the ZIP the same way.
-11. **Health readings have no UI.** Use the API (section 4.3).
+11. **Only today's weight has a UI.** Other health readings (glucose, blood pressure) are created through the API (section 4.3). Past-day weights cannot be entered on the page.
 12. **Backups:** `POST /api/admin/backup` returns 400 in the standard server
     path, because the app is not built with a raw SQLite handle (code reading).
     `src/backup-handler.ts` has no schedule: it is not wired into
