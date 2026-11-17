@@ -334,18 +334,6 @@ function dayControls(parent, day) {
   form.className = "day-controls";
   const eligibility = selectControl(form, `Tracking for ${day.day}`, [["tracked", "Tracked"], ["untracked", "Not tracking"]], day.eligibility);
   const completeness = selectControl(form, `Completeness for ${day.day}`, [["missing", "Automatic (complete once the day has ended)"], ["partial", "Incomplete (surprises took over)"], ["complete", "Complete (user-confirmed)"]], day.completeness_setting ?? day.completeness);
-  const label = addText(form, "label", "Explicitly accept assumed 2,000 kcal burn for this tracked day", "check");
-  const accept = document.createElement("input");
-  accept.type = "checkbox";
-  label.prepend(accept);
-  const updateBurnChoice = () => {
-    const confirmed = completeness.value === "complete" || (completeness.value === "missing" && day.completeness === "complete");
-    accept.disabled = eligibility.value !== "tracked" || !confirmed || day.burn_source === "recorded";
-    if (accept.disabled) accept.checked = false;
-  };
-  eligibility.addEventListener("change", updateBurnChoice);
-  completeness.addEventListener("change", updateBurnChoice);
-  updateBurnChoice();
   const button = addText(form, "button", "Save day");
   button.type = "submit";
   const state = addText(form, "p", "", "status");
@@ -356,8 +344,7 @@ function dayControls(parent, day) {
       message(state, "Saving day…");
       await mutate(`/api/days/${encodeURIComponent(day.day)}`, "PUT", {
         eligibility: eligibility.value,
-        completeness: completeness.value,
-        ...(accept.checked ? { accept_default_burn: true } : {})
+        completeness: completeness.value
       });
       message($("#history-status"), `${day.day} saved. Analytics remain at their displayed snapshot until refreshed.`);
       await refreshHistory();

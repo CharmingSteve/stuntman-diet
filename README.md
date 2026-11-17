@@ -279,8 +279,8 @@ removed again without effect.
 ### 4.2 Day controls in History
 
 Expand a day in History. You can set **Tracking** (tracked or not tracking),
-**Completeness**, and **accept the assumed 2000 kcal burn** (only for tracked,
-complete days with no recorded burn). The Completeness options are:
+**Completeness**. A tracked day with no written burn is stored with the assumed
+2000 kcal burn automatically. The Completeness options are:
 
 - **Automatic** (the default): complete once the day has ended, partial while it
   is today, missing when there are no entries.
@@ -406,9 +406,9 @@ export.
   can flag a day `partial` (incomplete) or confirm it `complete` in History. A
   new or changed entry on a day you had confirmed reopens that day to automatic.
   Analytics apply the same rule.
-- **Burn:** `recorded` (a burn you wrote) or `assumed`. A tracked day with no
-  written burn assumes **2000 kcal**, labelled "assumed". A recorded burn
-  overrides it.
+- **Burn:** `recorded` (a burn you wrote) or `assumed`. Every tracked day stores
+  **2000 kcal** as `assumed` until you write a burn, which replaces it as
+  `recorded`. Untracked days store no burn.
 - **Net** = intake − burn. It is shown only for tracked, complete days. Otherwise
   it is "Unknown". A complete day with no recorded burn nets against the
   assumed 2000 kcal, and the table says so.

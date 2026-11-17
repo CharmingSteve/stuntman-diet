@@ -70,7 +70,9 @@ export function voidedEntry(row: StoreItem): StoreWrite {
   return write(row.PK, row.SK, "entry", { ...row.data, status: "void", superseded_by: null }, row);
 }
 export function write(PK: string, SK: string, entity: string, data: Record<string, unknown>, previous?: StoreItem): StoreWrite {
-  return { item: { PK, SK, entity, data, version: (previous?.version ?? 0) + 1 }, expectedVersion: previous?.version ?? null };
+  // Every day write goes through here, so the stored burn always matches the tracking rule.
+  const stored = entity === "day" ? { ...data, ...withDefaultBurn(data as BurnFields) } : data;
+  return { item: { PK, SK, entity, data: stored, version: (previous?.version ?? 0) + 1 }, expectedVersion: previous?.version ?? null };
 }
 export async function profile(store: Store, user: string): Promise<Profile> {
   const old = await store.get(userPK(user), "PROFILE");
@@ -86,7 +88,7 @@ export function eligible(day: string, p: Profile): boolean {
   return !p.holidays.includes(day) && !p.non_tracking_weekdays.includes(new Date(`${day}T12:00:00Z`).getUTCDay());
 }
 export function newDay(day: string, p: Profile): Day {
-  return { day_key: day, timezone: p.timezone, eligibility: eligible(day, p) ? "tracked" : "untracked", completeness: "missing", burn_total: null, burn_source: null, accept_default_burn: false, burn_components: [] };
+  return withDefaultBurn({ day_key: day, timezone: p.timezone, eligibility: eligible(day, p) ? "tracked" : "untracked", completeness: "missing", burn_total: null, burn_source: null, accept_default_burn: false, burn_components: [] });
 }
 export async function dayState(store: Store, user: string, day: string, p: Profile): Promise<{ old?: StoreItem; data: Day }> {
   const old = await store.get(userPK(user), `DAY#${day}#META`);
@@ -94,6 +96,13 @@ export async function dayState(store: Store, user: string, day: string, p: Profi
 }
 // Tracked days without a written burn assume this default (labelled "assumed").
 export const defaultBurn = 2000;
+type BurnFields = Pick<Day, "eligibility" | "burn_total" | "burn_source">;
+// Stores the default on tracked days and removes it from untracked days. A recorded burn is never changed.
+export function withDefaultBurn<T extends BurnFields>(d: T): T {
+  if (d.eligibility === "tracked" && d.burn_total == null) return { ...d, burn_total: defaultBurn, burn_source: "assumed" };
+  if (d.eligibility !== "tracked" && d.burn_source === "assumed") return { ...d, burn_total: null, burn_source: null };
+  return d;
+}
 export function effectiveBurn(d: Day): { total: number; source: "recorded" | "assumed" } | null {
   if (d.eligibility !== "tracked") return null;
   if (d.burn_total !== null) return { total: d.burn_total, source: d.burn_source === "recorded" ? "recorded" : "assumed" };

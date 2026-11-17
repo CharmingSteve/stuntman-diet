@@ -79,7 +79,7 @@ describe("burn for another day", () => {
   it("a stray 'yesterday' in another clause does not move today's burn", async () => {
     await say("today burned 1642 + 1615; same lunch as yesterday", "b9");
     expect((await day("2026-11-02")).burn).toBe(3257);
-    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).toBeNull();
+    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).not.toBe("recorded");
   });
 
   it("a burn the model reads still goes to the named day", async () => {
@@ -91,8 +91,8 @@ describe("burn for another day", () => {
 
   it("two different burn days in one message are refused and write nothing", async () => {
     await expect(say("yesterday burned 1642 + 1615 and burned 1000 on 2026-10-31", "b11")).rejects.toThrow(/more than one day/);
-    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).toBeNull();
-    expect((await dayState(store, "u", "2026-10-31", profile)).data.burn_source).toBeNull();
+    expect((await dayState(store, "u", "2026-11-01", profile)).data.burn_source).not.toBe("recorded");
+    expect((await dayState(store, "u", "2026-10-31", profile)).data.burn_source).not.toBe("recorded");
   });
 
   it("a later burn for the same day replaces the earlier one", async () => {

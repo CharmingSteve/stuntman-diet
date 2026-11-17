@@ -129,7 +129,6 @@ export function createApp(
     return c.json(await mutate(store, user, key, { route: c.req.path, data }, async () => {
       const p = await profile(store, user), state = await dayState(store, user, day, p);
       const updated = { ...state.data, ...data };
-      if (data.accept_default_burn && updated.burn_total === null) { updated.burn_total = 2000; updated.burn_source = "assumed"; }
       return { writes: [write(userPK(user), `DAY#${day}#META`, "day", updated, state.old)], result: updated };
     }));
   });

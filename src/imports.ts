@@ -209,7 +209,8 @@ async function browserTableWrites(store: Store, user: string, rows: StoreItem[],
     writes.push(write(pk, sk, "entry", { ...entry, browser_table_group: table.group_id, browser_table_revision: table.revision_id }));
     activeKeys.push(sk);
   }
-  state.data.completeness = job.complete_days.includes(day) ? "complete" : "partial";
+  // Only an explicit "complete" decision or a real source mismatch sets completeness here. Other imported days stay automatic.
+  if (job.complete_days.includes(day)) state.data.completeness = "complete";
   const summaries = included.filter((r) => r.message.kind === "summary");
   if (summaries.length) {
     const independent = (await dayItems(store, user, day, day)).filter((e) =>
@@ -272,7 +273,7 @@ export async function confirmImport(store: Store, user: string, id: string): Pro
           }
           if (target) writes.push(write(pk, target.SK, "entry", { ...target.data, status: m.action === "void" ? "void" : "superseded", superseded_by: m.action === "void" ? null : record.source_id }, target));
           writes.push(write(pk, `SOURCE#${record.source_id}`, "source", { fingerprint: record.fingerprint, entry_sk: m.action === "void" ? null : entrySK, source_timestamp: m.timestamp, assigned_day: day, source_reference: m.source_reference ?? null }));
-          state.data.completeness = job.complete_days.includes(day) ? "complete" : "partial";
+          if (job.complete_days.includes(day)) state.data.completeness = "complete";
         } else {
           if (m.kind === "burn") { state.data.burn_total = z.number().parse(m.total); state.data.burn_source = "recorded"; }
           if (m.kind === "metric") {
