@@ -301,11 +301,17 @@ the entries.
   The day must be tracked. A burn needs no food entry, so it can be set on a day
   that has no log. Sending a new burn for a day replaces the old one. Burn is stored as `burn_source =
   recorded`. Clearing it needs a direct edit (section 4.5).
-- **Health readings** (glucose, blood pressure, weight) are created only through
-  `POST /api/health-metrics` with an `Idempotency-Key`. The chat cannot create
-  them, and there is no edit or delete endpoint. Units and ranges:
-  `glucose` mg/dL (20–600), `bp_systolic` mmHg (50–300), `bp_diastolic` mmHg
-  (30–200), `weight` kg (20–500).
+- **Health readings** (glucose, blood pressure, weight) are created through
+  `POST /api/health-metrics` with an `Idempotency-Key`. There is no edit or
+  delete endpoint. Units and ranges: `glucose` mg/dL (20–600), `bp_systolic`
+  mmHg (50–300), `bp_diastolic` mmHg (30–200), `weight` kg (20–500).
+- **Weight in chat:** the chat records a weight only when you post one, such as
+  "weight 84.2 kg", "I weigh 84.2 kg", or "84.2 kg at 7". The reply confirms the
+  date and time in your timezone. A weight without a unit, or in pounds, is not
+  recorded: the reply asks for kilograms. Values outside 20–500 kg are refused.
+  The chat parses weight in code and never sends it to the model, so a weight
+  is never a food entry, is never copied to other days, and stays out of
+  calorie totals.
 
 ### 4.4 Import corrections
 

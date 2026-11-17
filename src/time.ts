@@ -63,3 +63,27 @@ export function assertTimezone(timezone: unknown): asserts timezone is string {
     throw new TimeInputError("timezone must be a valid IANA timezone");
   }
 }
+
+// The UTC instant of a wall-clock time on a local calendar day in a timezone.
+export function instantAt(dayKey: string, hour: number, minute: number, timezone: string): Date {
+  const [year, month, day] = dayKey.split("-").map(Number) as [number, number, number];
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  let instant = wall;
+  for (let pass = 0; pass < 2; pass++) instant = wall - zoneOffsetMs(new Date(instant), timezone);
+  return new Date(instant);
+}
+
+// The local clock time (HH:MM) of an instant in a timezone.
+export function clockTime(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+}
+
+function zoneOffsetMs(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  }).formatToParts(date);
+  const value = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  const shown = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"));
+  return shown - Math.floor(date.getTime() / 1000) * 1000;
+}
