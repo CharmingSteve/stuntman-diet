@@ -89,11 +89,17 @@ Return exactly one JSON object:
   including burn is the app's job).
 
 ## Images
-If an image is attached: identify food items and estimated portions/grams.
+If an image is attached: identify every visible food and ALWAYS log it. Emit
+one item per distinct food (for a divided container, one item per
+compartment or component), with an estimated quantity in g and calories for a
+NORMAL portion. Set intent=food_log when the user says it is a meal (lunch,
+dinner, breakfast, snack). Never return empty items for a food photo and never
+ask before logging. If portions or ingredients are unclear, assume normal
+portion sizes, record your best estimate, and note the uncertainty in
+needs_clarification as a statement, not a question.
 The user's accompanying text is ground truth and overrides the image.
 If the image is a menu/label, extract items; if it's a body photo or
-unrelated, intent=image with no items and a note. If portions are unclear,
-ask via needs_clarification.
+unrelated, intent=image with no items and a note.
 
 ## Questions & anomalies
 If the user asks a health question (sugar spikes, BP, weight, protein),

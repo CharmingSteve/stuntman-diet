@@ -26,4 +26,20 @@ describe("Bedrock structured intent", () => {
     await expect(parseMessage("synthetic", [], "2025-01-05T12:00:00Z", "UTC")).rejects.toThrow(/valid JSON/);
     expect(send).toHaveBeenCalledTimes(2);
   });
+  it("retries a food photo that logged nothing and accepts the estimated retry", async () => {
+    const image = { mediaType: "jpeg" as const, bytes: new Uint8Array([1]) };
+    const item = { raw: "lentil rice", food_key: null, match_stage: "estimate", display_name: "Lentil rice", quantity: 200, unit: "g", calories: 300, calories_source: "estimate", confidence: "low", supersedes_entry_id: null };
+    const empty = { ...valid, needs_clarification: ["Which portion sizes?"] };
+    const logged = { ...valid, items: [item] };
+    send.mockResolvedValueOnce({ output: { message: { content: [{ toolUse: { name: "record_food_intent", input: empty } }] } } })
+      .mockResolvedValueOnce({ output: { message: { content: [{ toolUse: { name: "record_food_intent", input: logged } }] } } });
+    expect(await parseMessage("lunch", [], "2025-01-05T12:00:00Z", "UTC", image)).toEqual(logged);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1]![0].input.messages[0].content[0].text).toMatch(/normal portion/);
+  });
+  it("does not retry a text-only message with no items", async () => {
+    send.mockResolvedValue({ output: { message: { content: [{ toolUse: { name: "record_food_intent", input: valid } }] } } });
+    await parseMessage("hello", [], "2025-01-05T12:00:00Z", "UTC");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
 });

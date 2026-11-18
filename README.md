@@ -803,7 +803,6 @@ Every tracked file, grouped by purpose.
 
 **`prompts/`: older copies and agent briefs. Not read by the app or the deploy scripts.**
 
-- `stuntman-diet-system-prompt.md`: an older prompt. It has the earlier "ask about pizza" rule, not the current 50-kcal rule in `docs/`.
 - `foods.json`: an older catalog. It lacks the peanut-butter `secondary` units now in `seeds/foods.json`.
 - `AWS-WEB-FUNCTIONS.md`: the superseded EFS/SQLite deployment brief.
 - `copilot-build-prompt.md`: the original v1 build brief.
