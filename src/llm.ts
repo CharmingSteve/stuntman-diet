@@ -48,6 +48,13 @@ function promptPath(): string {
   return process.env.SYSTEM_PROMPT_PATH ?? "./docs/stuntman-diet-system-prompt.md";
 }
 
+// A food photo must yield estimated items. Catalog matches may leave calories null: the app prices them.
+function lacksEstimates(parsed: ParsedMessage): boolean {
+  if (parsed.intent === "question" || parsed.intent === "trend" || parsed.burn || parsed.correction) return false;
+  if (parsed.items.length === 0) return parsed.intent === "food_log" || parsed.intent === "unclear" || parsed.intent === "image";
+  return parsed.items.some((i) => i.calories === null && ["estimate", "unresolved"].includes(i.match_stage));
+}
+
 function parseResponse(body: string): ParsedMessage {
   let value: unknown;
   try {
@@ -89,14 +96,15 @@ export async function parseMessage(
   const prompt = [
     `client_time: ${clientTime}`,
     `profile_timezone: ${timezone}`,
-    image ? "An image is attached. Identify the food and estimate portions according to the system prompt." : "",
+    image ? "An image is attached. Identify every visible food and ALWAYS return one item per food with a calorie estimate for a normal portion (about one container compartment or one serving). Never ask before logging and never return empty items for a food photo: put any uncertainty in needs_clarification as a statement." : "",
     `FOOD_DB: ${foodDb}`,
     `USER_MESSAGE: ${text}`
   ].filter(Boolean).join("\n\n");
   let lastError: unknown;
+  let retryNote = "Return exactly one valid JSON object matching the required schema.";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const content: ContentBlock[] = [{
-      text: attempt === 0 ? prompt : `${prompt}\n\nReturn exactly one valid JSON object matching the required schema.`
+      text: attempt === 0 ? prompt : `${prompt}\n\n${retryNote}`
     }];
     if (image) content.push({ image: { format: image.mediaType, source: { bytes: image.bytes } } });
     const response = await client.send(new ConverseCommand({
@@ -115,11 +123,20 @@ export async function parseMessage(
     const textBlock = response.output?.message?.content?.find((block) => "text" in block);
     try {
       const tool = response.output?.message?.content?.find((block) => block.toolUse?.name === "record_food_intent")?.toolUse;
-      if (tool) return responseSchema.parse(tool.input);
-      if (!textBlock || !("text" in textBlock) || typeof textBlock.text !== "string") {
-        throw new Error("Bedrock response did not contain text");
+      let parsed: ParsedMessage;
+      if (tool) parsed = responseSchema.parse(tool.input);
+      else {
+        if (!textBlock || !("text" in textBlock) || typeof textBlock.text !== "string") {
+          throw new Error("Bedrock response did not contain text");
+        }
+        parsed = parseResponse(textBlock.text);
       }
-      return parseResponse(textBlock.text);
+      if (attempt === 0 && image && lacksEstimates(parsed)) {
+        retryNote = "Your previous answer logged nothing or left calories empty. Log every visible food now, assume normal portion sizes, and fill calories for every item. Do not ask for clarification.";
+        lastError = new Error("Image result had no calorie estimates");
+        continue;
+      }
+      return parsed;
     } catch (error) {
       lastError = error;
       if (attempt === 1) throw error;
